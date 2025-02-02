@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "traffic-arbitration"
+version = "0.1.0"
+description = ""
+authors = ["Andrey Urakin <urakin@yandex.ru>"]
+readme = "README.md"
+packages = [{include = "traffic_arbitration"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

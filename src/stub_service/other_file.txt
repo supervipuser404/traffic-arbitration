@@ -1,0 +1,1 @@
+# Дополнительный файл для src/stub_service/other_file.txt

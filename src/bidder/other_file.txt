@@ -1,0 +1,1 @@
+# Дополнительный файл для src/bidder/other_file.txt

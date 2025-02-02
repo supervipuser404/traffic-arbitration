@@ -1,0 +1,29 @@
+# config.tpl.yml
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  db_name: "traffic_arbitration_db"
+
+services:
+  ssp:
+    host: "0.0.0.0"
+    port: 8001
+  dsp:
+    host: "0.0.0.0"
+    port: 8002
+  bidder:
+    host: "0.0.0.0"
+    port: 8003
+  stub_service:
+    host: "0.0.0.0"
+    port: 8004
+
+scrapper:
+  # Настройки Selenium и т.п.
+  use_headless: true
+  browser: "chrome"
+
+# Другие настройки по необходимости
