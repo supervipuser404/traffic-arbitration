@@ -14,8 +14,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Пример подключения наших сервисов
   scrapper:
-    build: 
+    build:
       context: .
       dockerfile: ./Dockerfile  # Указать свой Dockerfile
     container_name: scrapper_service
@@ -27,9 +28,14 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Передаём переменные в окружение при необходимости
       PYTHONUNBUFFERED: 1
 
-# Добавьте другие сервисы по аналогии (ssp, dsp, bidder, stub_service и т.д.)
+  # Аналогично можно добавить сервисы ssp, dsp, bidder, stub_service и т.д.
+  # ssp:
+  # dsp:
+  # bidder:
+  # stub_service:
 
 volumes:
   postgres_data:
