@@ -1,1 +1,0 @@
-# Дополнительный файл для src/site/other_file.txt

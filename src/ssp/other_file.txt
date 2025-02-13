@@ -1,1 +1,0 @@
-# Дополнительный файл для src/ssp/other_file.txt

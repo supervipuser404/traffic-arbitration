@@ -1,1 +1,0 @@
-# Дополнительный файл для src/scrapper/other_file.txt
