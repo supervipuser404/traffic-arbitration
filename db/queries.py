@@ -2,7 +2,7 @@
 import logging
 from typing import List, Dict, Any
 import psycopg2
-from utils import unify_str_values  # универсальная функция
+from utils.main import unify_str_values  # универсальная функция
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import mimetypes

@@ -1,10 +1,13 @@
+import pathlib
+
 import yaml
 import logging
 import os
+from pathlib import Path
 
 # Имена файлов конфигурации
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.yml")
-CONFIG_TPL_FILE = os.path.join(os.path.dirname(__file__), "config.tpl.yml")
+CONFIG_FILE = Path(__file__).parent.parent / "config.yml"
+CONFIG_TPL_FILE = Path(__file__).parent.parent / "config.tpl.yml"
 
 # Глобальный словарь с настройками
 config = {}
@@ -38,7 +41,6 @@ def load_config():
         config.update(file_settings)
 
     logger.setLevel(config['log']['level'])
-    logger.debug(f"Загруженные настройки: {config}")
 
 
 # При импорте модуля — сразу загружаем
