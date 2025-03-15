@@ -11,9 +11,8 @@ def main():
     logger.info("=== START MAIN SCRAPPER ===")
     try:
         # 1) Получаем список источников
-        conn = get_connection()
-        sources = get_active_content_sources(conn)
-        conn.close()
+        with get_connection() as conn:
+            sources = get_active_content_sources(conn)
         logger.info(f"Активных источников: {len(sources)}")
 
         # 2) Параллельная обработка источников (каждый внутри себя может параллелить категории)
@@ -32,9 +31,8 @@ def main():
                     logger.error(f"Ошибка при обработке источника {src_name}: {e}", exc_info=True)
 
         # 3) После обработки всех источников — скачиваем картинки
-        conn = get_connection()
-        download_missing_images_in_batches(conn)
-        conn.close()
+        with get_connection() as conn:
+            download_missing_images_in_batches(conn)
 
     except KeyboardInterrupt:
         logger.warning("Остановка по Ctrl+C")

@@ -11,7 +11,7 @@ class TunnelPostgresConnection:
 
     def __init__(self, config):
         self._ssh_config = dict(config.get('ssh', {}))
-        self._postgres_config = dict(config.get('database', {}))
+        self._db_config = dict(config.get('database', {}))
         self._conn = None
         self._server = None
 
@@ -20,16 +20,14 @@ class TunnelPostgresConnection:
         Создаём SSH-туннель, если надо, и connection.
         Возвращаем сам connection (psycopg2) для использования.
         """
-        db_host = self._postgres_config["db_host"]
-        db_port = self._postgres_config["db_port"]
-
-        ssh_host = self._ssh_config.get("host")
-        ssh_port = self._ssh_config.get("port")
-        if ssh_host:
+        ssh, db = self._ssh_config, dict(self._db_config)
+        if ssh.get('host'):
             self._server = SSHTunnelForwarder(
-                (ssh_host, ssh_port),
-                remote_bind_address=(db_host, db_port),
-                **self._ssh_config,
+                (ssh.get('host'), ssh.get('port')),
+                remote_bind_address=(db.get('host'), db.get('port')),
+                ssh_username=ssh.get('user'),
+                ssh_password=ssh.get('password'),
+                allow_agent=ssh.get('allow_agent', False),
             )
             if not self._ssh_config.get('allow_agent'):
                 # HACK!
@@ -37,9 +35,10 @@ class TunnelPostgresConnection:
                 self._server.ssh_pkeys = []
 
             self._server.start()
-            self._postgres_config['local_port'] = self._server.local_bind_port
+            db['host'], db['port'] = '127.0.0.1', self._server.local_bind_port
 
-        self._conn = psycopg2.connect(**self._postgres_config)
+        self._conn = psycopg2.connect(**db)
+        self._conn.autocommit = False
 
         return self._conn
 

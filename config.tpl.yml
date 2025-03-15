@@ -5,6 +5,13 @@ log:
   path: /var/log/ml/
   level: DEBUG
 
+ssh:
+  host: 127.0.0.1
+  port: 22
+  user: "user"
+  password: "password"
+  allow_agent: false
+
 database:
   host: "localhost"
   port: 5432

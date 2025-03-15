@@ -62,14 +62,13 @@ def process_source(source_info: Dict):
     # 4) Batch upsert
     conn = None
     try:
-        conn = get_connection()
+        with get_connection() as conn:
+            link_map = upsert_external_articles_links_batch(conn, source_info["id"], all_previews)
+            upsert_external_articles_previews_batch(conn, link_map, all_previews)
+            upsert_visual_content_batch(conn, all_previews)
 
-        link_map = upsert_external_articles_links_batch(conn, source_info["id"], all_previews)
-        upsert_external_articles_previews_batch(conn, link_map, all_previews)
-        upsert_visual_content_batch(conn, all_previews)
-
-        conn.commit()
-        logger.info(f"Источник={source_info['name']}: данные успешно сохранены")
+            conn.commit()
+            logger.info(f"Источник={source_info['name']}: данные успешно сохранены")
     except Exception as e:
         logger.exception(f"Ошибка в process_source({source_info['name']}): {e}")
         if conn:
