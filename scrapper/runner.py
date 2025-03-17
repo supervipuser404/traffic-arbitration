@@ -52,7 +52,8 @@ def process_source(source_info: Dict):
     # 1) Создаём скрапер
     scraper = ScraperHandlerFactory.create(source_info)
 
-    # 2) Получаем список slugs (у нас в примере - ключи CATEGORIES). Можно подхватить иные категории из source_info['categories'].
+    # 2) Получаем список slugs (у нас в примере - ключи CATEGORIES).
+    # Можно подхватить иные категории из source_info['categories'].
     cat_slugs = list(CATEGORIES.keys())
 
     # 3) Парсим

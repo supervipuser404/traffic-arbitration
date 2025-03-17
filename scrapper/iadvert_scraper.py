@@ -35,7 +35,7 @@ class IAdvertScraper(BaseScraperHandler):
         if not domain.endswith("/"):
             domain += "/"
 
-        url = f"{domain}{category_slug}"
+        url = f"https://{domain}{category_slug}"
         logger.info(f"[iadvert:{self.source_info['name']}] Парсинг категории {category_slug} => {url}")
 
         driver = self._setup_driver()
@@ -53,7 +53,7 @@ class IAdvertScraper(BaseScraperHandler):
         unique_map = {}
         for el in elements:
             try:
-                link = el.get_attribute("href")
+                link = el.get_attribute("href") + "full/"
                 img_link = el.find_element(By.XPATH, ".//img").get_attribute("src")
                 cat_txt = el.find_element(By.XPATH, ".//div[@class='item-category']").text
                 title = el.find_element(By.XPATH, ".//span[@class='item-link']").text
@@ -88,8 +88,8 @@ class IAdvertScraper(BaseScraperHandler):
         all_data = []
 
         # Можно задать количество воркеров из config или настроек
-        from config.config import settings
-        max_workers = settings.get("parallel_categories_workers", 5)
+        from config import config
+        max_workers = config.get("parallel_categories_workers", 5)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             fut_map = {}
