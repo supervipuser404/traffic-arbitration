@@ -54,7 +54,7 @@ def process_source(source_info: Dict):
 
     # 2) Получаем список slugs (у нас в примере - ключи CATEGORIES).
     # Можно подхватить иные категории из source_info['categories'].
-    cat_slugs = list(CATEGORIES.keys())
+    cat_slugs = source_info['categories'] or list(CATEGORIES.keys())
 
     # 3) Парсим
     all_previews = scraper.scrape_all_categories(cat_slugs)
