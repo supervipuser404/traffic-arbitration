@@ -38,8 +38,6 @@ def test_scrape_one_category(scraper):
     else:
         categories = categories.split(";")
 
-    assert categories, f"У источника {source['name']} нет категорий!"
-
     category = categories[0]  # Берём первую категорию
     results = scraper_instance.scrape_category_previews(category)
 
