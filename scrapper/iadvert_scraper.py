@@ -10,7 +10,7 @@ from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 
 from scrapper.base_scraper import BaseScraperHandler
-from scrapper.runner import CATEGORIES
+from scrapper.commons import CATEGORIES
 
 logger = logging.getLogger(__name__)
 

@@ -108,3 +108,11 @@ CREATE TABLE IF NOT EXISTS categories_labels
     locale      TEXT DEFAULT 'RU',
     clause      TEXT
 );
+
+ALTER TABLE external_articles_previews
+ADD CONSTRAINT external_articles_previews_unique_key
+UNIQUE (link_id, title, image_link);
+
+ALTER TABLE visual_content
+ADD CONSTRAINT visual_content_link_key
+UNIQUE (link);

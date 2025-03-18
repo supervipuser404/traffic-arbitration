@@ -5,7 +5,7 @@ import requests
 from scrapper.scraper_factory import ScraperHandlerFactory
 from db.connection import get_connection
 from db.queries import get_active_content_sources
-from scrapper.runner import CATEGORIES  # Используем дефолтные категории
+from scrapper.commons import CATEGORIES
 
 # Количество тестируемых источников
 MAX_SOURCES = 3  # Можно увеличить, если нужно больше тестов

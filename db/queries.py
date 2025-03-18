@@ -151,7 +151,7 @@ def upsert_external_articles_previews_batch(conn, link_map: Dict[str, int], prev
             INSERT INTO external_articles_previews
               (link_id, title, text, image_link, created_at, updated_at, is_processed)
             VALUES {vals}
-            ON CONFLICT (link_id, title, image_link) DO NOTHING
+            ON CONFLICT (link_id, title, image_link) DO NOTHING;
         """
         cur.execute(sql)
 
@@ -178,7 +178,7 @@ def upsert_visual_content_batch(conn, previews: List[Dict[str, Any]]):
             INSERT INTO visual_content 
               (link, data, extension, width, height, created_at, updated_at)
             VALUES {vals}
-            ON CONFLICT (link) DO NOTHING
+            ON CONFLICT (link) DO NOTHING;
         """
         cur.execute(sql)
 
@@ -191,9 +191,9 @@ def download_missing_images_in_batches(conn):
     2) Пул потоков (N воркеров) качает
     3) Раз в BATCH_SIZE собранные результаты обновляем в БД
     """
-    from config.config import settings
-    max_workers = settings["images_download_workers"]
-    batch_size = settings["images_download_batch_size"]
+    from config import config
+    max_workers = config.get("images_download_workers", 5)
+    batch_size = config.get("images_download_batch_size", 20)
 
     with conn.cursor() as cur:
         cur.execute("""

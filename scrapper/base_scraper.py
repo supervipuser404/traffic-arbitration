@@ -24,7 +24,7 @@ class BaseScraperHandler(metaclass=abc.ABCMeta):
           {
             "link": str,
             "image_link": str,
-            "category_text": str,  # (может содержать несколько значений через ';')
+            "categories": str,
             "title": str
           },
           ...
