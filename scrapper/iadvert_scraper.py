@@ -9,7 +9,8 @@ from selenium.webdriver.common.by import By
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 
-from .base_scraper import BaseScraperHandler
+from scrapper.base_scraper import BaseScraperHandler
+from scrapper.runner import CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class IAdvertScraper(BaseScraperHandler):
         # Прокрутка
         for i in range(10):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(1)
             logger.debug(f"[iadvert:{category_slug}] Прокрутка {i + 1}/10")
         time.sleep(2)
 
@@ -51,17 +52,18 @@ class IAdvertScraper(BaseScraperHandler):
         logger.debug(f"[iadvert:{category_slug}] Найдено элементов: {len(elements)}")
 
         unique_map = {}
+        slugs = {v: k for k, v in CATEGORIES}
         for el in elements:
             try:
                 link = el.get_attribute("href") + "full/"
                 img_link = el.find_element(By.XPATH, ".//img").get_attribute("src")
-                cat_txt = el.find_element(By.XPATH, ".//div[@class='item-category']").text
+                cat_txt = el.find_element(By.XPATH, ".//div[@class='item-category']").text.strip()
                 title = el.find_element(By.XPATH, ".//span[@class='item-link']").text
 
                 key = (link, img_link, title)
                 if key not in unique_map:
                     unique_map[key] = set()
-                unique_map[key].add(cat_txt)
+                unique_map[key].add(slugs.get(cat_txt, "other"))
             except Exception as ex:
                 logger.debug(f"Ошибка в элементе: {ex}", exc_info=True)
 
