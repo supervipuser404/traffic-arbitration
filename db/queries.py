@@ -285,3 +285,60 @@ def _update_visual_content_batch(conn, items: List):
                  WHERE id = %s
             """, (psycopg2.Binary(content), ext, w, h, vc_id))
     conn.commit()
+
+
+def get_unprocessed_article_links_for_source(conn, source_id):
+    """ Получает все необработанные ссылки (is_processed = FALSE) для конкретного источника """
+    sql = """
+    SELECT link
+    FROM external_articles_links
+    WHERE source_id = %s AND is_processed = FALSE;
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (source_id,))
+        return [row[0] for row in cur.fetchall()]
+
+
+def upsert_external_articles_batch(conn, source_id, articles, batch_size=100):
+    """ Батчево вставляет записи в external_articles. При конфликте — DO NOTHING, логируем. """
+    if not articles:
+        return
+
+    with conn.cursor() as cur:
+        for i in range(0, len(articles), batch_size):
+            batch = articles[i:i + batch_size]
+
+            for art in batch:
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO external_articles (link_id, title, text, sources, created_at, updated_at)
+                        VALUES (
+                            (SELECT id FROM external_articles_links WHERE link = %s AND source_id = %s),
+                            %s, %s, %s, NOW(), NOW()
+                        )
+                        ON CONFLICT (link_id) DO NOTHING;
+                        """,
+                        (art["link"], source_id, art["title"], art["text"], art["sources"])
+                    )
+                except Exception as e:
+                    logging.warning(f"⚠️ Ошибка при вставке статьи с link={art['link']}: {e}")
+
+
+def mark_links_processed_batch(conn, source_id, links, batch_size=100):
+    """ Батчево помечает ссылки как обработанные в external_articles_links. """
+    if not links:
+        return
+
+    with conn.cursor() as cur:
+        for i in range(0, len(links), batch_size):
+            batch = links[i:i + batch_size]
+
+            cur.execute(
+                """
+                UPDATE external_articles_links
+                SET is_processed = TRUE, updated_at = NOW()
+                WHERE source_id = %s AND link = ANY(%s);
+                """,
+                (source_id, batch)
+            )

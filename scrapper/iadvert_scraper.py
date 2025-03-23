@@ -1,13 +1,11 @@
+import re
 import time
 from typing import List, Dict, Any
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
-from selenium import webdriver
-from webdriver_manager.chrome import ChromeDriverManager
 
 from scrapper.base_scraper import BaseScraperHandler
 from scrapper.commons import CATEGORIES
@@ -21,16 +19,6 @@ class IAdvertScraper(BaseScraperHandler):
     Параллелим категории в scrape_all_categories.
     """
 
-    def _setup_driver(self) -> webdriver.Chrome:
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        return driver
-
     def scrape_category_previews(self, category_slug: str) -> List[Dict[str, Any]]:
         domain = self.source_info.get("domain", "")
         if not domain.endswith("/"):
@@ -39,22 +27,22 @@ class IAdvertScraper(BaseScraperHandler):
         url = f"https://{domain}{category_slug}"
         logger.info(f"[iadvert:{self.source_info['name']}] Парсинг категории {category_slug} => {url}")
 
-        driver = self._setup_driver()
+        driver = self.driver_pool.get_driver()
         driver.get(url)
-        # Прокрутка
-        for i in range(10):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            logger.debug(f"[iadvert:{category_slug}] Прокрутка {i + 1}/10")
-        time.sleep(2)
-
-        elements = driver.find_elements(By.CLASS_NAME, "item-container")
-        logger.debug(f"[iadvert:{category_slug}] Найдено элементов: {len(elements)}")
-
         unique_map = {}
-        slugs = {v: k for k, v in CATEGORIES}
-        for el in elements:
-            try:
+        try:
+            # Прокрутка
+            for i in range(10):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                logger.debug(f"[iadvert:{category_slug}] Прокрутка {i + 1}/10")
+            time.sleep(2)
+
+            elements = driver.find_elements(By.CLASS_NAME, "item-container")
+            logger.debug(f"[iadvert:{category_slug}] Найдено элементов: {len(elements)}")
+
+            slugs = {v: k for k, v in CATEGORIES}
+            for el in elements:
                 link = el.get_attribute("href") + "full/"
                 img_link = el.find_element(By.XPATH, ".//img").get_attribute("src")
                 cat_txt = el.find_element(By.XPATH, ".//div[@class='item-category']").text.strip()
@@ -64,10 +52,10 @@ class IAdvertScraper(BaseScraperHandler):
                 if key not in unique_map:
                     unique_map[key] = set()
                 unique_map[key].add(slugs.get(cat_txt, "other"))
-            except Exception as ex:
-                logger.debug(f"Ошибка в элементе: {ex}", exc_info=True)
-
-        driver.quit()
+        except Exception as ex:
+            logger.debug(f"Ошибка: {ex}", exc_info=True)
+        finally:
+            self.driver_pool.release_driver(driver)
 
         # Превращаем в список
         results = []
@@ -127,3 +115,48 @@ class IAdvertScraper(BaseScraperHandler):
             })
         logger.info(f"[iadvert:{self.source_info['name']}] Всего итоговых превью: {len(final_results)}")
         return final_results
+
+    def scrape_article(self, link: str) -> dict | None:
+        """
+        Обрабатывает одну статью и возвращает словарь с результатами:
+        {link, title, text, sources}
+        """
+        driver = self.driver_pool.get_driver()
+        try:
+            driver.get(link)
+            title = driver.find_elements(By.CLASS_NAME, "item-title")
+            text = driver.find_elements(By.CLASS_NAME, "item-body")
+            text = self.clean_html(text)
+            return {
+                "link": link,
+                "title": title,
+                "text": text,
+                "sources": None
+            }
+        except Exception as e:
+            logging.error(f"❌ Ошибка при обработке статьи {link}: {e}")
+        finally:
+            self.driver_pool.release_driver(driver)
+
+    @staticmethod
+    def clean_html(text):
+        # Парсим HTML
+        soup = BeautifulSoup(text, "html.parser")
+
+        # Удаляем все <div> и их содержимое
+        for div in soup.find_all("div"):
+            div.decompose()
+
+        # Преобразуем HTML обратно в строку
+        cleaned_text = str(soup)
+
+        # Удаляем лишние пробельные символы вокруг тегов <br> и <br/>
+        cleaned_text = re.sub(r'\s*<br\s*/?>\s*', '<br>', cleaned_text, flags=re.MULTILINE)
+
+        # Удаляем повторяющиеся <br>
+        cleaned_text = re.sub(r'(<br>\s*)+', '<br>', cleaned_text, flags=re.MULTILINE)
+
+        # Удаляем пробелы в начале и конце строки
+        cleaned_text = cleaned_text.strip()
+
+        return cleaned_text
