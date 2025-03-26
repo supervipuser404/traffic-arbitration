@@ -29,8 +29,7 @@ def process_source(source_info: Dict):
 
     with DriverPool as driver_pool:
         # 1) Создаём скрапер
-        scraper = ScraperHandlerFactory.create(source_info)
-        scraper.configure(driver_pool)
+        scraper = ScraperHandlerFactory.create(source_info, driver_pool)
 
         # 2) Получаем список slugs (у нас в примере - ключи CATEGORIES).
         # Можно подхватить иные категории из source_info['categories'].

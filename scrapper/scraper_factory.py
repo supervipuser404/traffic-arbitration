@@ -9,10 +9,12 @@ class ScraperHandlerFactory:
     """
 
     @staticmethod
-    def create(source_info: Dict[str, Any]) -> BaseScraperHandler:
+    def create(source_info: Dict[str, Any], driver_pool) -> BaseScraperHandler:
         handler = source_info.get("source_handler")
         if handler == "iadvert":
-            return IAdvertScraper(source_info)
+            result = IAdvertScraper(source_info)
+            result.configure(driver_pool)
+            return result
         # elif handler == 'some_other':
         #     return SomeOtherScraper(source_info)
         else:
