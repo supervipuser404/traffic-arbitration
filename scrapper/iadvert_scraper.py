@@ -36,14 +36,20 @@ class IAdvertScraper(BaseScraperHandler):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
                 logger.debug(f"[iadvert:{category_slug}] Прокрутка {i + 1}/10")
-            time.sleep(2)
+            time.sleep(5)
 
             elements = driver.find_elements(By.CLASS_NAME, "item-container")
             logger.debug(f"[iadvert:{category_slug}] Найдено элементов: {len(elements)}")
 
-            slugs = {v: k for k, v in CATEGORIES}
+            slugs = {v: k for k, v in CATEGORIES.items()}
             for el in elements:
-                link = el.get_attribute("href") + "full/"
+                link = el.get_attribute("href")
+                # Имя категории неважно для показа страницы, но оно нужно.
+                # Поэтому, для унификации, все названия категорий заменяем на 'general'
+                link = link.split('/')
+                # название категории
+                link[3] = 'general'
+                link = '/'.join(link) + "full/"
                 img_link = el.find_element(By.XPATH, ".//img").get_attribute("src")
                 cat_txt = el.find_element(By.XPATH, ".//div[@class='item-category']").text.strip()
                 title = el.find_element(By.XPATH, ".//span[@class='item-link']").text
@@ -59,7 +65,9 @@ class IAdvertScraper(BaseScraperHandler):
 
         # Превращаем в список
         results = []
+        categories = set()
         for (lk, im, ttl), cat_set in unique_map.items():
+            categories.update(cat_set)
             merged_cats = ";".join(sorted(cat_set))
             results.append({
                 "link": lk,
@@ -68,6 +76,7 @@ class IAdvertScraper(BaseScraperHandler):
                 "title": ttl,
             })
         logger.info(f"[iadvert:{category_slug}] Уникальных превью: {len(results)}")
+        logger.info(f"[iadvert:{category_slug}] Категории: {sorted(categories)}")
         return results
 
     def scrape_all_categories(self, categories: List[str]) -> List[Dict[str, Any]]:
@@ -113,6 +122,7 @@ class IAdvertScraper(BaseScraperHandler):
                 "title": ttl,
                 "category_text": ";".join(sorted(catset))
             })
+        logger.info(f"[iadvert:{self.source_info['name']}] Всего обработано превью: {len(all_data)}")
         logger.info(f"[iadvert:{self.source_info['name']}] Всего итоговых превью: {len(final_results)}")
         return final_results
 
@@ -124,8 +134,8 @@ class IAdvertScraper(BaseScraperHandler):
         driver = self.driver_pool.get_driver()
         try:
             driver.get(link)
-            title = driver.find_elements(By.CLASS_NAME, "item-title")
-            text = driver.find_elements(By.CLASS_NAME, "item-body")
+            title = driver.find_element(By.CLASS_NAME, "item-title").text
+            text = driver.find_element(By.CLASS_NAME, "item-body").text
             text = self.clean_html(text)
             return {
                 "link": link,

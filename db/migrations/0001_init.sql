@@ -116,3 +116,7 @@ UNIQUE (link_id, title, image_link);
 ALTER TABLE visual_content
 ADD CONSTRAINT visual_content_link_key
 UNIQUE (link);
+
+ALTER TABLE external_articles
+ADD CONSTRAINT external_articles_link_id_key
+UNIQUE (link_id);

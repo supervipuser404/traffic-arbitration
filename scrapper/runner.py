@@ -27,7 +27,7 @@ def process_source(source_info: Dict):
     """
     logger.info(f"=== Начинаем обработку источника: {source_info['name']} (ID={source_info['id']}) ===")
 
-    with DriverPool as driver_pool:
+    with DriverPool() as driver_pool:
         # 1) Создаём скрапер
         scraper = ScraperHandlerFactory.create(source_info, driver_pool)
 

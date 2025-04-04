@@ -1,8 +1,8 @@
-# tests/test_scraper.py
 import pytest
 import requests
 
 from scrapper.scraper_factory import ScraperHandlerFactory
+from scrapper.driver_pool import DriverPool
 from db.connection import get_connection
 from db.queries import get_active_content_sources
 from scrapper.commons import CATEGORIES
@@ -17,14 +17,22 @@ def active_sources():
     """ Получаем список активных источников из базы """
     with get_connection() as conn:
         sources = get_active_content_sources(conn)
-    return sources[:MAX_SOURCES]  # Ограничиваем количество источников
+    return sources[:MAX_SOURCES]
+
+
+@pytest.fixture(scope="module")
+def driver_pool():
+    """Создаёт общий пул Selenium-драйверов для всех тестов"""
+    with DriverPool(max_drivers=1) as pool:
+        yield pool
 
 
 @pytest.fixture(scope="function")
-def scraper(active_sources):
-    """ Фикстура, создающая скраппер для каждого источника """
-    source = active_sources[0]  # Берём первый источник
-    return ScraperHandlerFactory.create(source), source
+def scraper(driver_pool, active_sources):
+    """Создаёт скраппер через фабрику с учётом driver_pool"""
+    source = active_sources[0]
+    scraper_instance = ScraperHandlerFactory.create(source, driver_pool=driver_pool)
+    return scraper_instance, source
 
 
 def test_scrape_one_category(scraper):

@@ -14,7 +14,6 @@ class DriverPool:
         self.max_drivers = max_drivers
         self.pool = queue.Queue()
         self.lock = threading.Lock()
-        self._initialized = False
 
     @staticmethod
     def _create_driver():
@@ -28,22 +27,12 @@ class DriverPool:
         driver = webdriver.Chrome(service=service, options=chrome_options)
         return driver
 
-    def _initialize_pool(self):
-        """ Лениво инициализирует пул драйверов. """
-        if not self._initialized:
-            with self.lock:
-                if not self._initialized:
-                    logging.info(f"🔄 Инициализация пула Selenium-драйверов ({self.max_drivers} шт.)")
-                    for _ in range(self.max_drivers):
-                        self.pool.put(self._create_driver())
-                    self._initialized = True
-
     def get_driver(self):
         """ Берёт драйвер из пула (ленивая инициализация). """
-        self._initialize_pool()
         with self.lock:
             if self.pool.empty():
-                logging.warning("⚠ Пул драйверов пуст, создаётся аварийный экземпляр.")
+                if self.pool.qsize() >= self.max_drivers:
+                    logging.warning("Пул драйверов пуст, создаётся аварийный экземпляр.")
                 return self._create_driver()  # Если пул пуст, создаём новый (аварийный случай)
             return self.pool.get()
 
@@ -60,12 +49,10 @@ class DriverPool:
         while not self.pool.empty():
             driver = self.pool.get()
             driver.quit()
-        self._initialized = False
-        logging.info("🛑 Все Selenium-драйверы закрыты.")
+        logging.info("Все Selenium-драйверы закрыты.")
 
     def __enter__(self):
         """ Контекстный менеджер для использования пула. """
-        self._initialize_pool()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
