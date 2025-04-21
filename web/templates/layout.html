@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="{{ config.lang | default('ru')}}">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Новости :: {{ config.city | default('Moscow')}} :: {{ config.company_name }}</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/img/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/img/icons/favicon-16x16.png">
+    <link rel="manifest" href="/manifest.json">
+
+    <!-- Подключение стилей -->
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <!-- Подключение jQuery и дополнительного скрипта -->
+    <script src="/static/js/jquery-3.7.1.min.js"></script>
+    <script src="/static/js/load.raw.js"></script>
+    <script src="/fcm.js"></script>
+
+    <!-- Дополнительные метатеги -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="logo"><span class="title">{{ config.company_name }}</span></div>
+        </div>
+    </div>
+
+    <!-- Контейнер, куда будет загружаться контент новостей через AJAX -->
+    <div id="news-container"></div>
+
+    <footer>
+        <div class="container">
+            <div class="logo"><span class="title">{{ config.company_name }}</span></div>
+            <span>Самые свежие и последние новости в сети!</span>
+            <span class="text__right">
+                © 2025 «{{ config.company_name }}».<br>
+                Все права защищены.
+            </span>
+        </div>
+    </footer>
+
+    <!-- Скрипт для загрузки контента -->
+    <script>
+        $(document).ready(function(){
+            // Загружаем новости с сервера через API
+            $.getJSON("/news", function(data){
+                let container = $("#news-container");
+                data.news.forEach(function(item){
+                    let newsHtml = `
+                        <div class="news-item">
+                            <h2>${item.title}</h2>
+                            <p>${item.date} | ${item.category}</p>
+                            <p>${item.content}</p>
+                        </div>
+                    `;
+                    container.append(newsHtml);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

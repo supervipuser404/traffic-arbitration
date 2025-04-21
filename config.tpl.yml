@@ -43,3 +43,7 @@ parallel_sources_workers: 3
 parallel_categories_workers: 5
 images_download_workers: 5
 images_download_batch_size: 20
+
+# Настройки для сайта
+company_name: "WhatTheFuck"
+company_short_name: "WTF"

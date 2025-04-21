@@ -18,6 +18,13 @@ class IAdvertScraper(BaseScraperHandler):
     Пример конкретного скрапера для source_handler='iadvert'.
     Параллелим категории в scrape_all_categories.
     """
+    category_pages = {
+        "general": 10,
+        "showbiz": 10,
+        "health": 10,
+        "social": 10,
+        "best": 50,
+    }
 
     def scrape_category_previews(self, category_slug: str) -> List[Dict[str, Any]]:
         domain = self.source_info.get("domain", "")
@@ -32,11 +39,12 @@ class IAdvertScraper(BaseScraperHandler):
         unique_map = {}
         try:
             # Прокрутка
-            for i in range(10):
+            pages_num = self.category_pages[category_slug]
+            for i in range(pages_num):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
-                logger.debug(f"[iadvert:{category_slug}] Прокрутка {i + 1}/10")
-            time.sleep(5)
+                logger.debug(f"[iadvert:{category_slug}] Прокрутка {i + 1}/{pages_num}")
+            time.sleep(pages_num)
 
             elements = driver.find_elements(By.CLASS_NAME, "item-container")
             logger.debug(f"[iadvert:{category_slug}] Найдено элементов: {len(elements)}")
@@ -79,16 +87,17 @@ class IAdvertScraper(BaseScraperHandler):
         logger.info(f"[iadvert:{category_slug}] Категории: {sorted(categories)}")
         return results
 
-    def scrape_all_categories(self, categories: List[str]) -> List[Dict[str, Any]]:
+    def scrape_all_categories(self) -> List[Dict[str, Any]]:
         """
         Переопределение: обрабатываем категории в пуле потоков -> каждый поток создаёт свой драйвер
         """
+        categories = list(self.category_pages)
         logger.info(f"[iadvert:{self.source_info['name']}] Параллельный парсинг {len(categories)} категорий")
         all_data = []
 
         # Можно задать количество воркеров из config или настроек
         from config import config
-        max_workers = config.get("parallel_categories_workers", 5)
+        max_workers = min(config.get("parallel_categories_workers", 5), len(categories))
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             fut_map = {}

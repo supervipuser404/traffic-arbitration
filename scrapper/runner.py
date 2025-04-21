@@ -31,15 +31,11 @@ def process_source(source_info: Dict):
         # 1) Создаём скрапер
         scraper = ScraperHandlerFactory.create(source_info, driver_pool)
 
-        # 2) Получаем список slugs (у нас в примере - ключи CATEGORIES).
-        # Можно подхватить иные категории из source_info['categories'].
-        cat_slugs = source_info['categories'] or list(CATEGORIES.keys())
-
-        # 3) Парсим
-        all_previews = scraper.scrape_all_categories(cat_slugs)
+        # 2) Парсим
+        all_previews = scraper.scrape_all_categories()
         logger.info(f"Источник={source_info['name']}: всего получено превью: {len(all_previews)}")
 
-        # 4) Batch upsert
+        # 3) Batch upsert
         with get_connection() as conn:
             try:
                 link_map = upsert_external_articles_links_batch(conn, source_info["id"], all_previews)
@@ -54,7 +50,7 @@ def process_source(source_info: Dict):
 
             links = get_unprocessed_article_links_for_source(conn, source_info["id"])
 
-        # 5) Парсим статьи
+        # 4) Парсим статьи
         if links:
             parsed_articles = scraper.scrape_articles(links)
 

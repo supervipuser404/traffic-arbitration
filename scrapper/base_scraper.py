@@ -43,11 +43,12 @@ class BaseScraperHandler(metaclass=abc.ABCMeta):
         """
         pass
 
-    def scrape_all_categories(self, categories: List[str]) -> List[Dict[str, Any]]:
+    def scrape_all_categories(self) -> List[Dict[str, Any]]:
         """
         Дефолтная (синхронная) реализация парсинга всех категорий по очереди.
         Если нужно параллельно, наследник может переопределить этот метод.
         """
+        categories = self.source_info["categories"].split(";") if self.source_info["categories"] else []
         all_data = []
         for cat in categories:
             cat_data = self.scrape_category_previews(cat)

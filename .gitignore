@@ -5,3 +5,5 @@ config.yml
 dev_*.py
 /venv/**
 /.venv/
+**/jquery*.js
+!**/jquery*.min.js
