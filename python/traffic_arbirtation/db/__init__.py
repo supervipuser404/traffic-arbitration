@@ -1,7 +1,6 @@
 # Инициализация модуля db
 import psycopg2
 from sshtunnel import SSHTunnelForwarder
-from config import config
 
 
 class TunnelPostgresConnection:
@@ -9,7 +8,10 @@ class TunnelPostgresConnection:
     Контекстный менеджер для объединения psycopg2 connection + SSH-туннель.
     """
 
-    def __init__(self, config):
+    def __init__(self, config=None):
+        if not config:
+            from ..common.config_loader import load_config
+            config = load_config()
         self._ssh_config = dict(config.get('ssh', {}))
         self._db_config = dict(config.get('database', {}))
         self._conn = None
