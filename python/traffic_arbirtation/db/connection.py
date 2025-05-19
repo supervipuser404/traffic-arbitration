@@ -1,6 +1,6 @@
 import psycopg2
-from config import config
-from db import TunnelPostgresConnection
+from traffic_arbirtation.common.config import config
+from traffic_arbirtation.db import TunnelPostgresConnection
 
 
 def get_connection(conf=None):
@@ -15,4 +15,4 @@ def get_connection(conf=None):
 
     При выходе из блока with — conn и туннель закроются.
     """
-    return TunnelPostgresConnection(conf or config)
+    return TunnelPostgresConnection(conf or dict(config))

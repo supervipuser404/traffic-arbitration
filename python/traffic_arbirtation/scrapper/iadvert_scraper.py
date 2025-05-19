@@ -7,8 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 
-from scrapper.base_scraper import BaseScraperHandler
-from scrapper.commons import CATEGORIES
+from traffic_arbirtation.scrapper.base_scraper import BaseScraperHandler
+from traffic_arbirtation.scrapper.commons import CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class IAdvertScraper(BaseScraperHandler):
         all_data = []
 
         # Можно задать количество воркеров из config или настроек
-        from config import config
+        from traffic_arbirtation.common.config import config
         max_workers = min(config.get("parallel_categories_workers", 5), len(categories))
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:

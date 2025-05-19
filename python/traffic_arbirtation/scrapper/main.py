@@ -1,10 +1,11 @@
+from traffic_arbirtation.common.config import config
+from traffic_arbirtation.common.logging import logger
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from db.connection import get_connection
-from db.queries import get_active_content_sources, download_missing_images_in_batches
-from scrapper.runner import process_source
-from config import config, logger
+from traffic_arbirtation.db.connection import get_connection
+from traffic_arbirtation.db.queries import get_active_content_sources, download_missing_images_in_batches
+from traffic_arbirtation.scrapper.runner import process_source
 
 
 def main():
