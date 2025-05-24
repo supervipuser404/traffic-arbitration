@@ -1,122 +1,160 @@
-CREATE TABLE IF NOT EXISTS content_sources
-(
+-- Источники контента
+CREATE TABLE IF NOT EXISTS content_sources (
     id             SERIAL PRIMARY KEY,
-    name           TEXT UNIQUE NOT NULL,
-    source_handler TEXT,
-    domain         TEXT,
+    name           VARCHAR(256) UNIQUE NOT NULL,
+    source_handler VARCHAR(128),
+    domain         VARCHAR(256),
     aliases        TEXT,
     old_domains    TEXT,
-    categories     TEXT,
-    locale         TEXT      DEFAULT 'RU',
-    geo            TEXT      DEFAULT 'RU',
     description    TEXT,
     created_at     TIMESTAMP DEFAULT NOW(),
     updated_at     TIMESTAMP DEFAULT NOW(),
     is_active      BOOLEAN   DEFAULT TRUE
 );
 
-CREATE TABLE IF NOT EXISTS external_articles_links
-(
+CREATE TABLE IF NOT EXISTS external_articles_links (
     id           SERIAL PRIMARY KEY,
-    source_id    INTEGER NOT NULL,
+    source_id    INTEGER NOT NULL REFERENCES content_sources(id) ON DELETE CASCADE,
     link         TEXT    NOT NULL,
-    categories   TEXT,
     created_at   TIMESTAMP DEFAULT NOW(),
     updated_at   TIMESTAMP DEFAULT NOW(),
     is_processed BOOLEAN   DEFAULT FALSE,
     UNIQUE (source_id, link)
 );
 
-CREATE TABLE IF NOT EXISTS external_articles_previews
-(
+CREATE TABLE IF NOT EXISTS external_articles_previews (
     id           SERIAL PRIMARY KEY,
-    link_id      INTEGER NOT NULL,
-    title        TEXT,
+    link_id      INTEGER NOT NULL REFERENCES external_articles_links(id) ON DELETE CASCADE,
+    title        VARCHAR(512),
     text         TEXT,
     image_link   TEXT,
     created_at   TIMESTAMP DEFAULT NOW(),
     updated_at   TIMESTAMP DEFAULT NOW(),
-    is_processed BOOLEAN   DEFAULT FALSE
+    is_processed BOOLEAN   DEFAULT FALSE,
+    UNIQUE (link_id, title, image_link)
 );
 
-CREATE TABLE IF NOT EXISTS external_articles
-(
+CREATE TABLE IF NOT EXISTS external_articles (
     id           SERIAL PRIMARY KEY,
-    link_id      INTEGER NOT NULL,
-    title        TEXT,
+    link_id      INTEGER NOT NULL REFERENCES external_articles_links(id) ON DELETE CASCADE,
+    title        VARCHAR(512),
     text         TEXT,
-    sources      TEXT,
     created_at   TIMESTAMP DEFAULT NOW(),
     updated_at   TIMESTAMP DEFAULT NOW(),
-    is_processed BOOLEAN   DEFAULT FALSE
+    is_processed BOOLEAN   DEFAULT FALSE,
+    UNIQUE (link_id)
 );
 
-CREATE TABLE IF NOT EXISTS visual_content
-(
+CREATE TABLE IF NOT EXISTS visual_content (
     id         SERIAL PRIMARY KEY,
     link       TEXT,
     data       BYTEA,
-    name       TEXT,
-    extension  TEXT,
+    name       VARCHAR(128),
+    extension  VARCHAR(16),
     width      INTEGER,
     height     INTEGER,
-    categories TEXT,
-    tags       TEXT,
-    parent     INTEGER,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS articles_previews
-(
+-- Основные статьи
+CREATE TABLE IF NOT EXISTS articles (
+    id              SERIAL PRIMARY KEY,
+    title           VARCHAR(512),
+    text            TEXT,
+    parent          INTEGER,
+    locale          VARCHAR(8) DEFAULT 'ru',
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW(),
+    source_datetime TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS articles_previews (
     id         SERIAL PRIMARY KEY,
-    article_id INTEGER NOT NULL,
-    title      TEXT,
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    title      VARCHAR(512),
     text       TEXT,
     image      TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS articles
-(
-    id              SERIAL PRIMARY KEY,
-    title           TEXT,
-    text            TEXT,
-    sources         TEXT,
-    categories      TEXT,
-    tags            TEXT,
-    parent          INTEGER,
-    locale          TEXT      DEFAULT 'RU',
-    geo             TEXT      DEFAULT 'RU',
-    created_at      TIMESTAMP DEFAULT NOW(),
-    updated_at      TIMESTAMP DEFAULT NOW(),
-    source_datetime TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS categories
-(
+CREATE TABLE IF NOT EXISTS categories (
     id          SERIAL PRIMARY KEY,
-    name        TEXT NOT NULL UNIQUE,
+    code        VARCHAR(64) NOT NULL UNIQUE,
     description TEXT
 );
 
-CREATE TABLE IF NOT EXISTS categories_labels
-(
+CREATE TABLE IF NOT EXISTS category_labels (
     id          SERIAL PRIMARY KEY,
-    category_id INTEGER NOT NULL,
-    locale      TEXT DEFAULT 'RU',
-    clause      TEXT
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    locale      VARCHAR(8) DEFAULT 'ru',
+    label       VARCHAR(128) NOT NULL
 );
 
-ALTER TABLE external_articles_previews
-ADD CONSTRAINT external_articles_previews_unique_key
-UNIQUE (link_id, title, image_link);
+CREATE TABLE IF NOT EXISTS geo (
+    id          SERIAL PRIMARY KEY,
+    code        VARCHAR(8) NOT NULL UNIQUE,
+    description TEXT
+);
 
-ALTER TABLE visual_content
-ADD CONSTRAINT visual_content_link_key
-UNIQUE (link);
+CREATE TABLE IF NOT EXISTS geo_labels (
+    id      SERIAL PRIMARY KEY,
+    geo_id  INTEGER NOT NULL REFERENCES geo(id) ON DELETE CASCADE,
+    locale  VARCHAR(8) DEFAULT 'ru',
+    label   VARCHAR(128) NOT NULL
+);
 
-ALTER TABLE external_articles
-ADD CONSTRAINT external_articles_link_id_key
-UNIQUE (link_id);
+CREATE TABLE IF NOT EXISTS tags (
+    id   SERIAL PRIMARY KEY,
+    code VARCHAR(64) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS article_categories (
+    article_id   INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    category_id  INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (article_id, category_id)
+);
+
+CREATE TABLE IF NOT EXISTS article_geo (
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    geo_id     INTEGER NOT NULL REFERENCES geo(id) ON DELETE CASCADE,
+    PRIMARY KEY (article_id, geo_id)
+);
+
+CREATE TABLE IF NOT EXISTS article_tags (
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (article_id, tag_id)
+);
+
+-- Связи для external_articles_links <-> categories
+CREATE TABLE IF NOT EXISTS external_article_link_categories (
+    link_id     INTEGER NOT NULL REFERENCES external_articles_links(id) ON DELETE CASCADE,
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (link_id, category_id)
+);
+
+-- Для visual_content связи
+CREATE TABLE IF NOT EXISTS visual_content_categories (
+    visual_content_id INTEGER NOT NULL REFERENCES visual_content(id) ON DELETE CASCADE,
+    category_id       INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (visual_content_id, category_id)
+);
+
+CREATE TABLE IF NOT EXISTS visual_content_tags (
+    visual_content_id INTEGER NOT NULL REFERENCES visual_content(id) ON DELETE CASCADE,
+    tag_id            INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (visual_content_id, tag_id)
+);
+
+-- Индексы для быстрого поиска (по нужным связям)
+CREATE INDEX IF NOT EXISTS idx_article_categories_article_id ON article_categories(article_id);
+CREATE INDEX IF NOT EXISTS idx_article_categories_category_id ON article_categories(category_id);
+CREATE INDEX IF NOT EXISTS idx_article_geo_article_id ON article_geo(article_id);
+CREATE INDEX IF NOT EXISTS idx_article_geo_geo_id ON article_geo(geo_id);
+CREATE INDEX IF NOT EXISTS idx_article_tags_article_id ON article_tags(article_id);
+CREATE INDEX IF NOT EXISTS idx_article_tags_tag_id ON article_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_external_article_link_categories_link_id ON external_article_link_categories(link_id);
+CREATE INDEX IF NOT EXISTS idx_visual_content_categories_visual_content_id ON visual_content_categories(visual_content_id);
+CREATE INDEX IF NOT EXISTS idx_visual_content_tags_visual_content_id ON visual_content_tags(visual_content_id);

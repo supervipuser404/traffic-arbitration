@@ -1,8 +1,8 @@
-**/.idea/**
-**/__pycache__/**
-**/.venv/**
+**/.idea
+**/__pycache__
+**/.venv
 **/config.yml
 /.**
-dev_*.py
+**/dev_*.py
 **/jquery*.js
 !**/jquery*.min.js

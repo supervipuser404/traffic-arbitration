@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, LargeBinary, Index, \
+    UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 
@@ -32,6 +33,9 @@ class ExternalArticleLink(Base):
     external_articles = relationship("ExternalArticle", back_populates="link")
     external_article_previews = relationship("ExternalArticlePreview", back_populates="link")
     categories = relationship("Category", secondary="external_article_link_categories")
+    __table_args__ = (
+        UniqueConstraint("source_id", "link", name="external_articles_links_source_id_link_key"),
+    )
 
 
 class ExternalArticlePreview(Base):
@@ -45,6 +49,10 @@ class ExternalArticlePreview(Base):
     updated_at = Column(DateTime, server_default=func.now())
     is_processed = Column(Boolean, default=False)
     link = relationship("ExternalArticleLink", back_populates="external_article_previews")
+    __table_args__ = (
+        UniqueConstraint("link_id", "title", "image_link",
+                         name="external_articles_previews_link_id_title_image_link_key"),
+    )
 
 
 class ExternalArticle(Base):
@@ -57,6 +65,9 @@ class ExternalArticle(Base):
     updated_at = Column(DateTime, server_default=func.now())
     is_processed = Column(Boolean, default=False)
     link = relationship("ExternalArticleLink", back_populates="external_articles")
+    __table_args__ = (
+        UniqueConstraint("link_id", name="external_articles_link_id_key"),
+    )
 
 
 class VisualContent(Base):
@@ -72,6 +83,8 @@ class VisualContent(Base):
     updated_at = Column(DateTime, server_default=func.now())
     categories = relationship("Category", secondary="visual_content_categories")
     tags = relationship("Tag", secondary="visual_content_tags")
+    # Удаляем индексы из __table_args__, так как они не нужны в этой таблице
+    __table_args__ = ()
 
 
 class Article(Base):
@@ -142,38 +155,58 @@ class Tag(Base):
     code = Column(String(64), unique=True, nullable=False)
 
 
-# Many-to-many association tables
 class ArticleCategory(Base):
     __tablename__ = "article_categories"
     article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (
+        Index("idx_article_categories_article_id", "article_id"),
+        Index("idx_article_categories_category_id", "category_id"),
+    )
 
 
 class ArticleGeo(Base):
     __tablename__ = "article_geo"
     article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True)
     geo_id = Column(Integer, ForeignKey("geo.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (
+        Index("idx_article_geo_article_id", "article_id"),
+        Index("idx_article_geo_geo_id", "geo_id"),
+    )
 
 
 class ArticleTag(Base):
     __tablename__ = "article_tags"
     article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True)
     tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (
+        Index("idx_article_tags_article_id", "article_id"),
+        Index("idx_article_tags_tag_id", "tag_id"),
+    )
 
 
 class ExternalArticleLinkCategory(Base):
     __tablename__ = "external_article_link_categories"
     link_id = Column(Integer, ForeignKey("external_articles_links.id", ondelete="CASCADE"), primary_key=True)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (
+        Index("idx_external_article_link_categories_link_id", "link_id"),
+    )
 
 
 class VisualContentCategory(Base):
     __tablename__ = "visual_content_categories"
     visual_content_id = Column(Integer, ForeignKey("visual_content.id", ondelete="CASCADE"), primary_key=True)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (
+        Index("idx_visual_content_categories_visual_content_id", "visual_content_id"),
+    )
 
 
 class VisualContentTag(Base):
     __tablename__ = "visual_content_tags"
     visual_content_id = Column(Integer, ForeignKey("visual_content.id", ondelete="CASCADE"), primary_key=True)
     tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (
+        Index("idx_visual_content_tags_visual_content_id", "visual_content_id"),
+    )
