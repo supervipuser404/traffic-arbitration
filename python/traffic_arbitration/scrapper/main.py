@@ -1,11 +1,11 @@
-from traffic_arbirtation.common.config import config
-from traffic_arbirtation.common.logging import logger
+from traffic_arbitration.common.config import config
+from traffic_arbitration.common.logging import logger
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from traffic_arbirtation.db.connection import get_connection
-from traffic_arbirtation.db.queries import get_active_content_sources, download_missing_images_in_batches
-from traffic_arbirtation.scrapper.runner import process_source
+from traffic_arbitration.db.connection import get_connection
+from traffic_arbitration.db.queries import get_active_content_sources, download_missing_images_in_batches
+from traffic_arbitration.scrapper.runner import process_source
 
 
 def main():

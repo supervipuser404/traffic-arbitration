@@ -1,6 +1,6 @@
 import psycopg2
-from traffic_arbirtation.common.config import config
-from traffic_arbirtation.db import TunnelPostgresConnection
+from traffic_arbitration.common.config import config
+from traffic_arbitration.db import TunnelPostgresConnection
 
 
 def get_connection(conf=None):

@@ -4,8 +4,8 @@ from typing import Dict
 from .commons import CATEGORIES
 from .driver_pool import DriverPool
 from .scraper_factory import ScraperHandlerFactory
-from traffic_arbirtation.db.connection import get_connection
-from traffic_arbirtation.db.queries import (
+from traffic_arbitration.db.connection import get_connection
+from traffic_arbitration.db.queries import (
     upsert_external_articles_links_batch,
     upsert_external_articles_previews_batch,
     upsert_visual_content_batch, get_unprocessed_article_links_for_source, upsert_external_articles_batch,

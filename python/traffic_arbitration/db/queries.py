@@ -2,7 +2,7 @@
 import logging
 from typing import List, Dict, Any
 import psycopg2
-from traffic_arbirtation.common.utils import unify_str_values  # универсальная функция
+from traffic_arbitration.common.utils import unify_str_values  # универсальная функция
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import mimetypes
@@ -191,7 +191,7 @@ def download_missing_images_in_batches(conn):
     2) Пул потоков (N воркеров) качает
     3) Раз в BATCH_SIZE собранные результаты обновляем в БД
     """
-    from traffic_arbirtation.common.config import config
+    from traffic_arbitration.common.config import config
     max_workers = config.get("images_download_workers", 5)
     batch_size = config.get("images_download_batch_size", 20)
 

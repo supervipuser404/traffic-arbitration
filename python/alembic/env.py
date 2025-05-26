@@ -4,8 +4,8 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
-from traffic_arbirtation.common.config import config as config_data
-from traffic_arbirtation.models import Base
+from traffic_arbitration.common.config import config as config_data
+from traffic_arbitration.models import Base
 
 # Формирование SQLAlchemy URL из config.yml
 db_config = config_data['database']

@@ -1,3 +1,3 @@
-from traffic_arbirtation.scrapper.main import main
+from traffic_arbitration.scrapper.main import main
 
 main()
