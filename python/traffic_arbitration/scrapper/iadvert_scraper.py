@@ -144,7 +144,7 @@ class IAdvertScraper(BaseScraperHandler):
         try:
             driver.get(link)
             title = driver.find_element(By.CLASS_NAME, "item-title").text
-            text = driver.find_element(By.CLASS_NAME, "item-body").text
+            text = driver.find_element(By.CLASS_NAME, "item-body").get_attribute("innerHTML")
             text = self.clean_html(text)
             return {
                 "link": link,
@@ -163,7 +163,7 @@ class IAdvertScraper(BaseScraperHandler):
         soup = BeautifulSoup(text, "html.parser")
 
         # Удаляем все <div> и их содержимое
-        for div in soup.find_all("div"):
+        for div in soup.find_all("div", recursive=True):
             div.decompose()
 
         # Преобразуем HTML обратно в строку

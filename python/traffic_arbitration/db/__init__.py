@@ -1,6 +1,9 @@
 # Инициализация модуля db
 import psycopg2
 from sshtunnel import SSHTunnelForwarder
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import yaml
 
 
 class TunnelPostgresConnection:
@@ -31,7 +34,7 @@ class TunnelPostgresConnection:
                 ssh_password=ssh.get('password'),
                 allow_agent=ssh.get('allow_agent', False),
             )
-            if not self._ssh_config.get('allow_agent'):
+            if not ssh.get('allow_agent'):
                 # HACK!
                 # noinspection SpellCheckingInspection
                 self._server.ssh_pkeys = []
@@ -54,16 +57,61 @@ class TunnelPostgresConnection:
             self._server.stop()
 
 
-def get_connection(conf=None):
+class TunnelPostgresSession:
     """
-    Возвращает контекстный менеджер.
-    Использовать так:
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1;")
-            ...
-
-    При выходе из блока with — conn и туннель закроются.
+    Контекстный менеджер для SQLAlchemy сессии с поддержкой SSH-туннеля.
     """
-    return TunnelPostgresConnection(conf or config)
+
+    def __init__(self, config=None):
+        if not config:
+            with open('config.yml', 'r') as file:
+                config = yaml.safe_load(file)
+        self._ssh_config = dict(config.get('ssh', {}))
+        self._db_config = dict(config.get('database', {}))
+        self._engine = None
+        self._session = None
+        self._server = None
+
+    def __enter__(self):
+        """
+        Создаёт SSH-туннель (если нужно) и SQLAlchemy сессию.
+        Возвращает сессию для использования.
+        """
+        ssh, db = self._ssh_config, self._db_config
+        host, port = db.get('host'), db.get('port')
+
+        if ssh.get('host'):
+            self._server = SSHTunnelForwarder(
+                (ssh.get('host'), ssh.get('port', 22)),
+                remote_bind_address=(host, port),
+                ssh_username=ssh.get('user'),
+                ssh_password=ssh.get('password'),
+                allow_agent=ssh.get('allow_agent', False),
+            )
+            if not ssh.get('allow_agent'):
+                self._server.ssh_pkeys = []
+            self._server.start()
+            host, port = '127.0.0.1', self._server.local_bind_port
+
+        # Формируем URL для SQLAlchemy
+        sqlalchemy_url = (
+            f"postgresql://{db.get('user')}:{db.get('password')}"
+            f"@{host}:{port}/{db.get('dbname')}"
+        )
+
+        # Создаём движок и сессию
+        self._engine = create_engine(sqlalchemy_url)
+        Session = sessionmaker(bind=self._engine)
+        self._session = Session()
+        return self._session
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Закрывает сессию, движок и туннель (если был создан).
+        """
+        if self._session:
+            self._session.close()
+        if self._engine:
+            self._engine.dispose()
+        if self._server:
+            self._server.stop()

@@ -1,6 +1,6 @@
 import psycopg2
 from traffic_arbitration.common.config import config
-from traffic_arbitration.db import TunnelPostgresConnection
+from traffic_arbitration.db import TunnelPostgresConnection, TunnelPostgresSession
 
 
 def get_connection(conf=None):
@@ -16,3 +16,17 @@ def get_connection(conf=None):
     При выходе из блока with — conn и туннель закроются.
     """
     return TunnelPostgresConnection(conf or dict(config))
+
+
+def get_session(conf=None):
+    """
+    Возвращает контекстный менеджер для SQLAlchemy сессии.
+
+    Использовать так:
+    with get_session() as session:
+        sources = session.query(ContentSource).all()
+        ...
+
+    При выходе из блока with сессия и туннель закрываются.
+    """
+    return TunnelPostgresSession(conf or dict(config))

@@ -1,6 +1,7 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.remote.webdriver import WebDriver
 from webdriver_manager.chrome import ChromeDriverManager
 import queue
 import threading
@@ -27,7 +28,7 @@ class DriverPool:
         driver = webdriver.Chrome(service=service, options=chrome_options)
         return driver
 
-    def get_driver(self):
+    def get_driver(self) -> WebDriver:
         """ Берёт драйвер из пула (ленивая инициализация). """
         with self.lock:
             if self.pool.empty():

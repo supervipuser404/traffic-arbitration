@@ -73,7 +73,7 @@ class ExternalArticle(Base):
 class VisualContent(Base):
     __tablename__ = "visual_content"
     id = Column(Integer, primary_key=True)
-    link = Column(Text)
+    link = Column(Text, unique=True)
     data = Column(LargeBinary)
     name = Column(String(128))
     extension = Column(String(16))

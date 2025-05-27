@@ -4,6 +4,8 @@ import abc
 import concurrent.futures
 import logging
 
+from traffic_arbitration.scrapper.driver_pool import DriverPool
+
 
 class BaseScraperHandler(metaclass=abc.ABCMeta):
     """
@@ -19,7 +21,8 @@ class BaseScraperHandler(metaclass=abc.ABCMeta):
         """
         self.source_info = source_info
         self.source_id = source_info['id']
-        self.driver_pool = None
+        # noinspection PyTypeChecker
+        self.driver_pool: DriverPool = None
 
     """ Базовый скраппер, поддерживающий переиспользование Selenium-драйверов. """
 

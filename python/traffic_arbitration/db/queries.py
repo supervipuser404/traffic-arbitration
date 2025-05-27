@@ -1,344 +1,520 @@
-# db/queries.py
 import logging
-from typing import List, Dict, Any
-import psycopg2
-from traffic_arbitration.common.utils import unify_str_values  # универсальная функция
+from typing import List, Dict, Any, Optional, Tuple
+from sqlalchemy.orm import Session
+from sqlalchemy import select, func, update, delete, bindparam
+from sqlalchemy.dialects.postgresql import insert
+from traffic_arbitration.models import (
+    ContentSource, ExternalArticleLink, ExternalArticlePreview, ExternalArticle,
+    VisualContent, Category, ExternalArticleLinkCategory
+)
+from traffic_arbitration.common.utils import unify_str_values
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import mimetypes
 import os
 from io import BytesIO
 from PIL import Image
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 
-def get_active_content_sources(conn) -> List[Dict[str, Any]]:
+def get_active_content_sources(session: Session) -> List[Dict[str, Any]]:
     """
-    Возвращает список источников (из content_sources), где is_active=1.
+    Возвращает список источников (из content_sources), где is_active=True.
+
+    Args:
+        session: SQLAlchemy сессия.
+
+    Returns:
+        Список словарей с данными активных источников.
     """
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, name, source_handler, domain, categories, locale, geo
-              FROM content_sources
-             WHERE is_active = TRUE
-        """)
-        rows = cur.fetchall()
+    result = session.execute(
+        select(
+            ContentSource.id,
+            ContentSource.name,
+            ContentSource.source_handler,
+            ContentSource.domain,
+            ContentSource.aliases
+        ).filter_by(is_active=True)
+    ).all()
 
-    result = []
-    for r in rows:
-        result.append({
-            "id": r[0],
-            "name": r[1],
-            "source_handler": r[2],
-            "domain": r[3],
-            "categories": r[4] or "",
-            "locale": r[5] or "RU",
-            "geo": r[6] or "RU"
-        })
-    return result
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "source_handler": row.source_handler,
+            "domain": row.domain,
+            "categories": row.aliases or "",  # aliases как категории
+            "locale": "RU",  # TODO: Добавить поле locale в content_sources
+            "geo": "RU"  # TODO: Добавить поле geo в content_sources
+        }
+        for row in result
+    ]
 
 
-def load_existing_links_for_source(conn, source_id: int) -> Dict[str, Dict[str, Any]]:
+def load_existing_links_for_source(session: Session, source_id: int) -> Dict[str, Dict[str, Any]]:
     """
-    Загружает (link-> {id, categories}) для external_articles_links по source_id.
-    """
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, link, categories
-              FROM external_articles_links
-             WHERE source_id = %s
-        """, (source_id,))
-        rows = cur.fetchall()
+    Загружает (link -> {id, categories}) для external_articles_links по source_id.
+    Категории извлекаются из external_article_link_categories за один запрос.
 
-    out = {}
-    for (row_id, link, cats) in rows:
-        out[link] = {
-            "id": row_id,
-            "categories": cats or ""
+    Args:
+        session: SQLAlchemy сессия.
+        source_id: ID источника.
+
+    Returns:
+        Словарь, где ключ - строка ссылки, значение - словарь с id и списком категорий.
+    """
+    # Запрос с LEFT JOIN и агрегацией категорий
+    stmt = (
+        select(
+            ExternalArticleLink.id,
+            ExternalArticleLink.link,
+            func.string_agg(Category.code, ';').label('categories')
+        )
+        .outerjoin(ExternalArticleLinkCategory, ExternalArticleLink.id == ExternalArticleLinkCategory.link_id)
+        .outerjoin(Category, ExternalArticleLinkCategory.category_id == Category.id)
+        .filter(ExternalArticleLink.source_id == source_id)
+        .group_by(ExternalArticleLink.id, ExternalArticleLink.link)
+    )
+
+    result = session.execute(stmt).all()
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in result:
+        out[str(row.link)] = {
+            "id": row.id,
+            "categories": row.categories or ""
         }
     return out
 
 
-def upsert_external_articles_links_batch(conn, source_id: int, previews: List[Dict[str, Any]]) -> Dict[str, int]:
+def upsert_external_articles_links_batch(session: Session, source_id: int,
+                                         previews: List[Dict[str, Any]]) -> Dict[str, int]:
     """
-    Batch upsert в external_articles_links:
-      - один SELECT всех ссылок для этого source_id
-      - формируем списки на UPDATE (где есть) и INSERT (где нет)
-      - одним SQL блоком делаем INSERT (и сохраняем id)
-      - делаем UPDATE где нужно
-    Возвращаем словарь link->id.
-    """
-    existing = load_existing_links_for_source(conn, source_id)
-    update_list = []
-    insert_list = []
-    result_map = {}
+    Batch upsert в external_articles_links и обновление категорий в external_article_link_categories.
+    Возвращает словарь link -> id.
 
-    for p in previews:
-        link = p["link"]
-        new_cats = p["category_text"] or ""
+    Args:
+        session: SQLAlchemy сессия.
+        source_id: ID источника.
+        previews: Список словарей с данными превью.
+
+    Returns:
+        Словарь, где ключ - строка ссылки, значение - ID записи.
+    """
+    # Загружаем существующие ссылки
+    existing = load_existing_links_for_source(session, source_id)
+    result_map: Dict[str, Optional[int]] = {}
+
+    # Кэшируем категории (code -> id)
+    categories = session.execute(select(Category.code, Category.id)).all()
+    category_map: Dict[str, int] = {row.code: row.id for row in categories if row.code}
+
+    # Списки для пакетной обработки
+    new_links = []
+    links_to_update = []  # ID ссылок для обновления updated_at
+    categories_to_insert = []  # Новые связи для external_article_link_categories
+    link_ids_to_clear = []  # ID ссылок, у которых нужно удалить старые категории
+
+    for preview in previews:
+        link = preview.get("link")
         if not link:
             continue
+        new_cats = preview.get("category_text", "") or ""
+
         if link in existing:
-            row_id = existing[link]["id"]
+            link_id = existing[link]["id"]
             old_cats = existing[link]["categories"]
-            merged = unify_str_values(old_cats, new_cats, sep=";")
-            if merged != old_cats:
-                update_list.append((merged, row_id))
-            result_map[link] = row_id
+            merged_cats = unify_str_values(old_cats, new_cats, sep=";")
+            if merged_cats != old_cats:
+                links_to_update.append(link_id)
+                link_ids_to_clear.append(link_id)
+                # Добавляем категории
+                for cat_code in merged_cats.split(";"):
+                    if cat_code in category_map:  # Проверка наличия категории
+                        categories_to_insert.append({
+                            "link_id": link_id,
+                            "category_id": category_map[cat_code]
+                        })
+            result_map[link] = link_id
         else:
-            insert_list.append((link, new_cats))
-
-    with conn.cursor() as cur:
-        # UPDATE
-        for (merged_cats, row_id) in update_list:
-            cur.execute("""
-                UPDATE external_articles_links
-                   SET categories = %s,
-                       updated_at = NOW()
-                 WHERE id = %s
-            """, (merged_cats, row_id))
-
-        # INSERT
-        if insert_list:
-            # формируем VALUES
-            vals_sql = ",".join(
-                cur.mogrify("(%s, %s, %s, NOW(), NOW(), FALSE)", (source_id, lk, ct)).decode()
-                for (lk, ct) in insert_list
+            new_link = ExternalArticleLink(
+                source_id=source_id,
+                link=link,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                is_processed=False
             )
-            sql = f"""
-                INSERT INTO external_articles_links 
-                    (source_id, link, categories, created_at, updated_at, is_processed)
-                VALUES {vals_sql}
-                RETURNING id, link
-            """
-            cur.execute(sql)
-            inserted_rows = cur.fetchall()
-            for r in inserted_rows:
-                new_id, new_link = r
-                result_map[new_link] = new_id
+            new_links.append(new_link)
+            # Сохраняем временное значение None
+            result_map[link] = None
+            # Добавляем категории для новой ссылки
+            for cat_code in new_cats.split(";"):
+                if cat_code in category_map:
+                    categories_to_insert.append({
+                        "link_id": None,  # Заполним после flush
+                        "category_id": category_map[cat_code],
+                        "_link": link  # Для маппинга после flush
+                    })
 
-    return result_map
+    # Пакетная вставка новых ссылок
+    if new_links:
+        session.add_all(new_links)
+        session.flush()  # Получаем ID новых ссылок
+        for link_obj in new_links:
+            result_map[link_obj.link] = link_obj.id
+            # Обновляем link_id для категорий
+            for cat in categories_to_insert:
+                if cat.get("_link") == link_obj.link:
+                    cat["link_id"] = link_obj.id
+                    del cat["_link"]
+
+    # Пакетное удаление старых категорий
+    if link_ids_to_clear:
+        session.execute(
+            delete(ExternalArticleLinkCategory).where(
+                ExternalArticleLinkCategory.link_id.in_(link_ids_to_clear)
+            )
+        )
+
+    # Пакетная вставка новых категорий
+    if categories_to_insert:
+        session.bulk_save_objects([
+            ExternalArticleLinkCategory(
+                link_id=cat["link_id"],
+                category_id=cat["category_id"]
+            )
+            for cat in categories_to_insert if cat["link_id"] is not None
+        ])
+
+    # Пакетное обновление updated_at
+    if links_to_update:
+        session.execute(
+            update(ExternalArticleLink)
+            .where(ExternalArticleLink.id.in_(links_to_update))
+            .values(updated_at=datetime.now(timezone.utc))
+        )
+
+    # Проверяем, что все значения в result_map - int
+    final_result_map: Dict[str, int] = {k: v for k, v in result_map.items() if v is not None}
+    return final_result_map
 
 
-def upsert_external_articles_previews_batch(conn, link_map: Dict[str, int], previews: List[Dict[str, Any]]):
+def upsert_external_articles_previews_batch(session: Session, link_map: Dict[str, int], previews: List[Dict[str, Any]]):
     """
     Batch вставка/обновление в external_articles_previews.
-    Предполагаем UNIQUE(link_id, title, image_link).
-    Используем INSERT ... ON CONFLICT ... DO NOTHING.
+
+    Args:
+        session: SQLAlchemy сессия.
+        link_map: Словарь link -> link_id.
+        previews: Список словарей с данными превью.
     """
-    rows_to_insert = []
-    for p in previews:
-        link = p["link"]
+    # Получаем все link_id, для которых будем проверять существующие превью
+    link_ids = list(link_map.values())
+    if not link_ids:
+        return
+
+    # Загружаем существующие превью одним запросом
+    existing_previews = session.execute(
+        select(
+            ExternalArticlePreview.link_id,
+            ExternalArticlePreview.title,
+            ExternalArticlePreview.image_link
+        ).filter(ExternalArticlePreview.link_id.in_(link_ids))
+    ).all()
+
+    # Создаём множество для быстрого поиска существующих комбинаций
+    existing_set = {(row.link_id, row.title or "", row.image_link or "") for row in existing_previews}
+
+    # Собираем новые записи для вставки
+    new_previews = []
+    current_time = datetime.now(timezone.utc)
+
+    for preview in previews:
+        link = preview.get("link")
         if not link or link not in link_map:
             continue
         link_id = link_map[link]
-        title = p["title"] or ""
-        image_link = p["image_link"] or ""
-        # text="" (анонс, если нужен)
+        title = preview.get("title", "") or ""
+        image_link = preview.get("image_link", "") or ""
 
-        rows_to_insert.append((link_id, title, "", image_link))
+        # Проверяем, существует ли запись
+        if (link_id, title, image_link) not in existing_set:
+            new_previews.append({
+                "link_id": link_id,
+                "title": title,
+                "text": "",
+                "image_link": image_link,
+                "created_at": current_time,
+                "updated_at": current_time,
+                "is_processed": False
+            })
 
-    if not rows_to_insert:
-        return
-
-    with conn.cursor() as cur:
-        vals = ",".join(
-            cur.mogrify("(%s, %s, %s, %s, NOW(), NOW(), FALSE)", row).decode()
-            for row in rows_to_insert
+    # Пакетная вставка новых превью
+    if new_previews:
+        session.execute(
+            insert(ExternalArticlePreview)
+            .values(new_previews)
+            .on_conflict_do_nothing(
+                index_elements=["link_id", "title", "image_link"]
+            )
         )
-        sql = f"""
-            INSERT INTO external_articles_previews
-              (link_id, title, text, image_link, created_at, updated_at, is_processed)
-            VALUES {vals}
-            ON CONFLICT (link_id, title, image_link) DO NOTHING;
-        """
-        cur.execute(sql)
 
 
-def upsert_visual_content_batch(conn, previews: List[Dict[str, Any]]):
+def upsert_visual_content_batch(session: Session, previews: List[Dict[str, Any]]):
     """
-    Batch вставка "заглушек" в visual_content (link, data=NULL),
-    используя INSERT ... ON CONFLICT (link) DO NOTHING.
-    """
-    links = set()
-    for p in previews:
-        if p["image_link"]:
-            links.add(p["image_link"])
+    Batch вставка заглушек в visual_content (link, data=NULL).
 
+    Args:
+        session: SQLAlchemy сессия.
+        previews: Список словарей с данными превью.
+    """
+    # Собираем уникальные image_link
+    links = {preview.get("image_link") for preview in previews if preview.get("image_link")}
     if not links:
         return
 
-    with conn.cursor() as cur:
-        vals = ",".join(
-            cur.mogrify("(%s, NULL, NULL, NULL, NULL, NOW(), NOW())", (lk,)).decode()
-            for lk in links
+    # Загружаем существующие записи одним запросом
+    existing_links = session.execute(
+        select(VisualContent.link).filter(VisualContent.link.in_(links))
+    ).scalars().all()
+    existing_set = set(existing_links)
+
+    # Собираем новые записи
+    current_time = datetime.now(timezone.utc)
+    new_contents = [
+        {
+            "link": link,
+            "data": None,
+            "extension": None,
+            "width": None,
+            "height": None,
+            "created_at": current_time,
+            "updated_at": current_time
+        }
+        for link in links if link not in existing_set
+    ]
+
+    # Пакетная вставка
+    if new_contents:
+        session.execute(
+            insert(VisualContent)
+            .values(new_contents)
+            .on_conflict_do_nothing(index_elements=["link"])
         )
-        sql = f"""
-            INSERT INTO visual_content 
-              (link, data, extension, width, height, created_at, updated_at)
-            VALUES {vals}
-            ON CONFLICT (link) DO NOTHING;
-        """
-        cur.execute(sql)
 
 
-def download_missing_images_in_batches(conn):
+def download_missing_images_in_batches(session: Session):
     """
-    Скачивает изображения, которых нет в visual_content.data,
-    сохраняя их мини-батчами (чтобы не делать update на каждую запись).
-    1) Смотрим, где data IS NULL
-    2) Пул потоков (N воркеров) качает
-    3) Раз в BATCH_SIZE собранные результаты обновляем в БД
+    Скачивает изображения, где data IS NULL в visual_content.
+
+    Args:
+        session: SQLAlchemy сессия.
     """
     from traffic_arbitration.common.config import config
     max_workers = config.get("images_download_workers", 5)
     batch_size = config.get("images_download_batch_size", 20)
 
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, link
-              FROM visual_content
-             WHERE data IS NULL
-               AND link IS NOT NULL
-        """)
-        rows = cur.fetchall()
+    # Загружаем только id и link
+    contents = session.execute(
+        select(VisualContent.id, VisualContent.link)
+        .filter(VisualContent.data.is_(None), VisualContent.link.isnot(None))
+    ).all()
+    logger.info(f"Для скачивания найдено {len(contents)} изображений")
 
-    logger.info(f"Для скачивания найдено {len(rows)} изображений")
-
-    # Функция-воркер: скачиваем картинку, возвращаем (id, content, extension, width, height)
-    def worker(row_item):
-        vc_id, link = row_item
+    def worker(content) -> Tuple[int, bytes, str | None, int | None, int | None] | None:
         try:
-            resp = requests.get(link, timeout=10)
+            resp = requests.get(content.link, timeout=10)
             if resp.status_code == 200:
-                content = resp.content
-                # Пытаемся определить расширение
+                content_bytes = resp.content
                 ctype = resp.headers.get("Content-Type", "")
                 guess_ext = mimetypes.guess_extension(ctype)
                 if not guess_ext:
-                    # из ссылки
-                    _, ext_from_link = os.path.splitext(link)
-                    if ext_from_link:
-                        guess_ext = ext_from_link
-
+                    _, ext_from_link = os.path.splitext(content.link)
+                    guess_ext = ext_from_link or None
                 width, height = None, None
                 try:
-                    im = Image.open(BytesIO(content))
+                    im = Image.open(BytesIO(content_bytes))
                     width, height = im.size
                 except Exception as e:
-                    logger.debug(f"Не удалось определить размер (id={vc_id}): {e}", exc_info=True)
-
-                return (vc_id, content, guess_ext, width, height)
+                    logger.debug(f"Не удалось определить размер (id={content.id}): {e}", exc_info=True)
+                return content.id, content_bytes, guess_ext, width, height
             else:
-                logger.debug(f"Не скачалось link={link}, status={resp.status_code}")
+                logger.debug(f"Не скачалось link={content.link}, status={resp.status_code}")
         except Exception as e:
-            logger.debug(f"Ошибка при скачивании link={link}: {e}", exc_info=True)
+            logger.debug(f"Ошибка при скачивании link={content.link}: {e}", exc_info=True)
         return None
 
-    # Запускаем пул
-    results = []
-    to_update = []  # буфер под обновления (id, data, ext, w, h)
+    to_update: List[Tuple[int, bytes, str | None, int | None, int | None]] = []
     updated_count = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(worker, r): r for r in rows}
+        futures = {executor.submit(worker, content): content for content in contents}
         for fut in as_completed(futures):
             res = fut.result()
             if res:
-                to_update.append(res)  # (vc_id, content, ext, w, h)
+                to_update.append(res)
                 if len(to_update) >= batch_size:
-                    _update_visual_content_batch(conn, to_update)
+                    _update_visual_content_batch(session, to_update)
                     updated_count += len(to_update)
                     to_update.clear()
 
-    # Если остались «хвост» в to_update
     if to_update:
-        _update_visual_content_batch(conn, to_update)
+        _update_visual_content_batch(session, to_update)
         updated_count += len(to_update)
-        to_update.clear()
 
     logger.info(f"Скачивание изображений завершено. Обновлено записей: {updated_count}")
 
 
-def _update_visual_content_batch(conn, items: List):
+def _update_visual_content_batch(session: Session, items: List[Tuple[int, bytes, str | None, int | None, int | None]]):
     """
-    Вспомогательная функция: обновление поля data/extension/width/height батчем.
-    items = [(vc_id, content_bytes, ext, width, height), ...]
+    Обновление visual_content батчем.
+
+    Args:
+        session: SQLAlchemy сессия.
+        items: Список кортежей (vc_id, content_bytes, ext, width, height).
     """
     if not items:
         return
-    with conn.cursor() as cur:
-        # Можно сделать UPDATE с CASE WHEN, но проще несколько UPDATE'ов в цикле
-        # или аккуратный "unnest" cte. Покажем вариант cte + unnest:
-        # Для упрощённого примера, сделаем так:
-        # WARNING: psycopg2 не умеет natively батчить UPDATE, придётся либо несколько UPDATE, либо хитрую конструкцию.
-        # Здесь сделаем в цикле, чтоб было понятнее.
-        for (vc_id, content, ext, w, h) in items:
-            cur.execute("""
-                UPDATE visual_content
-                   SET data = %s,
-                       extension = %s,
-                       width = %s,
-                       height = %s,
-                       updated_at = NOW()
-                 WHERE id = %s
-            """, (psycopg2.Binary(content), ext, w, h, vc_id))
-    conn.commit()
+
+    # Собираем данные для обновления
+    values = [
+        {
+            "id": vc_id,
+            "data": content,
+            "extension": ext,
+            "width": width,
+            "height": height,
+            "updated_at": datetime.now(timezone.utc)
+        }
+        for vc_id, content, ext, width, height in items
+    ]
+
+    # Пакетное обновление с отключением синхронизации сессии
+    session.execute(
+        update(VisualContent)
+        .where(VisualContent.id.in_([v["id"] for v in values]))
+        .values(
+            data=bindparam("data"),
+            extension=bindparam("extension"),
+            width=bindparam("width"),
+            height=bindparam("height"),
+            updated_at=bindparam("updated_at")
+        ),
+        values,
+        execution_options={"synchronize_session": None}  # Отключаем синхронизацию
+    )
 
 
-def get_unprocessed_article_links_for_source(conn, source_id):
-    """ Получает все необработанные ссылки (is_processed = FALSE) для конкретного источника """
-    sql = """
-    SELECT link
-    FROM external_articles_links
-    WHERE source_id = %s AND is_processed = FALSE;
+def get_unprocessed_article_links_for_source(session: Session, source_id: int) -> List[str]:
     """
-    with conn.cursor() as cur:
-        cur.execute(sql, (source_id,))
-        return [row[0] for row in cur.fetchall()]
+    Получает список необработанных ссылок (is_processed = False) для источника.
+
+    Args:
+        session: SQLAlchemy сессия.
+        source_id: ID источника.
+
+    Returns:
+        Список строк ссылок.
+    """
+    result = session.execute(
+        select(ExternalArticleLink.link)
+        .filter_by(source_id=source_id, is_processed=False)
+    ).scalars().all()
+
+    # Приводим к list, если тип не соответствует, из-за аннотации Sequence[_R] в SQLAlchemy,
+    # которая вызывает предупреждение в статическом анализаторе PyCharm/Pyright
+    links = result if isinstance(result, list) else list(result)
+
+    return links
 
 
-def upsert_external_articles_batch(conn, source_id, articles, batch_size=100):
-    """ Батчево вставляет записи в external_articles. При конфликте — DO NOTHING, логируем. """
+def upsert_external_articles_batch(session: Session, source_id: int, articles: List[Dict[str, Any]],
+                                   batch_size: int = 100):
+    """
+    Батчево вставляет записи в external_articles.
+
+    Args:
+        session: SQLAlchemy сессия.
+        source_id: ID источника.
+        articles: Список словарей с данными статей.
+        batch_size: Размер пакета для вставки.
+    """
     if not articles:
         return
 
-    with conn.cursor() as cur:
-        for i in range(0, len(articles), batch_size):
-            batch = articles[i:i + batch_size]
-
-            for art in batch:
-                try:
-                    cur.execute(
-                        """
-                        INSERT INTO external_articles (link_id, title, text, sources, created_at, updated_at)
-                        VALUES (
-                            (SELECT id FROM external_articles_links WHERE link = %s AND source_id = %s),
-                            %s, %s, %s, NOW(), NOW()
-                        )
-                        ON CONFLICT (link_id) DO NOTHING;
-                        """,
-                        (art["link"], source_id, art["title"], art["text"], art["sources"])
-                    )
-                except Exception as e:
-                    logging.warning(f"⚠️ Ошибка при вставке статьи с link={art['link']}: {e}")
-
-
-def mark_links_processed_batch(conn, source_id, links, batch_size=100):
-    """ Батчево помечает ссылки как обработанные в external_articles_links. """
+    # Собираем все link
+    links = [art.get("link") for art in articles if art.get("link")]
     if not links:
         return
 
-    with conn.cursor() as cur:
-        for i in range(0, len(links), batch_size):
-            batch = links[i:i + batch_size]
+    # Загружаем link_id для всех ссылок
+    link_objs = session.execute(
+        select(ExternalArticleLink.link, ExternalArticleLink.id)
+        .filter_by(source_id=source_id)
+        .filter(ExternalArticleLink.link.in_(links))
+    ).all()
+    link_id_map = {row.link: row.id for row in link_objs}
 
-            cur.execute(
-                """
-                UPDATE external_articles_links
-                SET is_processed = TRUE, updated_at = NOW()
-                WHERE source_id = %s AND link = ANY(%s);
-                """,
-                (source_id, batch)
+    # Загружаем существующие статьи
+    link_ids = list(link_id_map.values())
+    existing_articles = session.execute(
+        select(ExternalArticle.link_id).filter(ExternalArticle.link_id.in_(link_ids))
+    ).scalars().all()
+    existing_set = set(existing_articles)
+
+    # Собираем новые статьи
+    current_time = datetime.now(timezone.utc)
+    new_articles = []
+    for art in articles:
+        link = art.get("link")
+        if not link or link not in link_id_map:
+            logger.warning(f"⚠️ Ссылка не найдена: {link}")
+            continue
+        link_id = link_id_map[link]
+        if link_id not in existing_set:
+            new_articles.append({
+                "link_id": link_id,
+                "title": art.get("title", "") or "",
+                "text": art.get("text", "") or "",
+                "created_at": current_time,
+                "updated_at": current_time,
+                "is_processed": False
+            })
+
+    # Пакетная вставка
+    for i in range(0, len(new_articles), batch_size):
+        batch = new_articles[i:i + batch_size]
+        session.execute(
+            insert(ExternalArticle)
+            .values(batch)
+            .on_conflict_do_nothing(index_elements=["link_id"])
+        )
+
+
+def mark_links_processed_batch(session: Session, source_id: int, links: List[str], batch_size: int = 100):
+    """
+    Помечает ссылки как обработанные.
+
+    Args:
+        session: SQLAlchemy сессия.
+        source_id: ID источника.
+        links: Список ссылок для пометки.
+        batch_size: Размер пакета для обновления.
+    """
+    if not links:
+        return
+
+    for i in range(0, len(links), batch_size):
+        batch = links[i:i + batch_size]
+        session.execute(
+            update(ExternalArticleLink)
+            .where(
+                ExternalArticleLink.source_id == source_id,
+                ExternalArticleLink.link.in_(batch)
             )
+            .values(
+                is_processed=True,
+                updated_at=datetime.now(timezone.utc)
+            )
+        )
