@@ -59,12 +59,15 @@ class ExternalArticle(Base):
     __tablename__ = "external_articles"
     id = Column(Integer, primary_key=True)
     link_id = Column(Integer, ForeignKey("external_articles_links.id", ondelete="CASCADE"), nullable=False)
-    title = Column(String(512))
-    text = Column(Text)
+    title = Column(String(512), nullable=False)
+    text = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now())
-    is_processed = Column(Boolean, default=False)
+    is_processed = Column(Boolean, default=False, nullable=False)
+
     link = relationship("ExternalArticleLink", back_populates="external_articles")
+    articles = relationship("Article", back_populates="external_article")
+
     __table_args__ = (
         UniqueConstraint("link_id", name="external_articles_link_id_key"),
     )
@@ -90,13 +93,22 @@ class VisualContent(Base):
 class Article(Base):
     __tablename__ = "articles"
     id = Column(Integer, primary_key=True)
-    title = Column(String(512))
-    text = Column(Text)
-    parent = Column(Integer)
-    locale = Column(String(8), default="ru")
+    title = Column(String(512), nullable=False)
+    text = Column(Text, nullable=False)
+    parent_id = Column(Integer, ForeignKey("articles.id"), nullable=True)  # Иерархия
+    external_article_id = Column(Integer, ForeignKey("external_articles.id"), nullable=True)  # Внешняя статья
+    locale_id = Column(Integer, ForeignKey("locales.id"), nullable=False)  # Локаль
+    image_id = Column(Integer, ForeignKey("visual_content.id"), nullable=True)  # Изображение
+    is_active = Column(Boolean, default=True, nullable=False, server_default='true')  # Готово к публикации
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now())
     source_datetime = Column(DateTime)
+
+    parent = relationship("Article", remote_side="articles.id", back_populates="children")
+    children = relationship("Article", back_populates="parent")
+    external_article = relationship("ExternalArticle", back_populates="articles")
+    locale = relationship("Locale", back_populates="articles")
+    image = relationship("VisualContent")
     previews = relationship("ArticlePreview", back_populates="article")
     categories = relationship("Category", secondary="article_categories")
     geo = relationship("Geo", secondary="article_geo")
@@ -210,3 +222,12 @@ class VisualContentTag(Base):
     __table_args__ = (
         Index("idx_visual_content_tags_visual_content_id", "visual_content_id"),
     )
+
+
+class Locale(Base):
+    __tablename__ = "locales"
+    id = Column(Integer, primary_key=True)
+    code = Column(String(5), nullable=False, unique=True)  # 'ru', 'en'
+    name = Column(String(50), nullable=True)  # 'Русский', 'English'
+
+    articles = relationship("Article", back_populates="locale")
