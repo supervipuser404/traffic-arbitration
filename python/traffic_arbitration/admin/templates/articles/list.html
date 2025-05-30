@@ -1,0 +1,131 @@
+{% extends "layouts.html" %}
+{% block content %}
+<h1>Articles</h1>
+<form method="GET" class="mb-4">
+    <div class="row">
+        <div class="col-md-3">
+            <label>Date From</label>
+            <input type="date" name="date_from" value="{{ filters.date_from }}" class="form-control">
+        </div>
+        <div class="col-md-3">
+            <label>Date To</label>
+            <input type="date" name="date_to" value="{{ filters.date_to }}" class="form-control">
+        </div>
+        <div class="col-md-3">
+            <label>Preset</label>
+            <select name="preset" class="form-control">
+                <option value="">None</option>
+                <option value="today" {% if filters.preset == "today" %}selected{% endif %}>Today</option>
+                <option value="yesterday" {% if filters.preset == "yesterday" %}selected{% endif %}>Yesterday</option>
+                <option value="7days" {% if filters.preset == "7days" %}selected{% endif %}>Last 7 Days</option>
+                <option value="30days" {% if filters.preset == "30days" %}selected{% endif %}>Last 30 Days</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label>Source</label>
+            <select name="source_id" class="form-control">
+                <option value="">All</option>
+                {% for source in sources %}
+                    <option value="{{ source.id }}" {% if filters.source_id == source.id %}selected{% endif %}>{{ source.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="row mt-2">
+        <div class="col-md-3">
+            <label>Locale</label>
+            <select name="locale_id" class="form-control">
+                <option value="">All</option>
+                {% for locale in locales %}
+                    <option value="{{ locale.id }}" {% if filters.locale_id == locale.id %}selected{% endif %}>{{ locale.code }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label>Active</label>
+            <select name="is_active" class="form-control">
+                <option value="all" {% if filters.is_active == "all" %}selected{% endif %}>All</option>
+                <option value="true" {% if filters.is_active == "true" %}selected{% endif %}>Active</option>
+                <option value="false" {% if filters.is_active == "false" %}selected{% endif %}>Inactive</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label>Categories</label>
+            <select name="category_ids" multiple class="form-control">
+                {% for category in categories %}
+                    <option value="{{ category.id }}" {% if category.id in filters.category_ids %}selected{% endif %}>{{ category.code }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label>Geo</label>
+            <select name="geo_ids" multiple class="form-control">
+                {% for geo in geo_tags %}
+                    <option value="{{ geo.id }}" {% if geo.id in filters.geo_ids %}selected{% endif %}>{{ geo.code }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="row mt-2">
+        <div class="col-md-3">
+            <label>Tags</label>
+            <select name="tag_ids" multiple class="form-control">
+                {% for tag in tags %}
+                    <option value="{{ tag.id }}" {% if tag.id in filters.tag_ids %}selected{% endif %}>{{ tag.code }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3 mt-4">
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </div>
+    </div>
+</form>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th><a href="?sort=title&order={{ 'asc' if sort == 'title' and order == 'desc' else 'desc' }}">Title</a></th>
+            <th><a href="?sort=created_at&order={{ 'asc' if sort == 'created_at' and order == 'desc' else 'desc' }}">Created</a></th>
+            <th><a href="?sort=updated_at&order={{ 'asc' if sort == 'updated_at' and order == 'desc' else 'desc' }}">Updated</a></th>
+            <th><a href="?sort=source_datetime&order={{ 'asc' if sort == 'source_datetime' and order == 'desc' else 'desc' }}">Source Date</a></th>
+            <th><a href="?sort=is_active&order={{ 'asc' if sort == 'is_active' and order == 'desc' else 'desc' }}">Active</a></th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in articles %}
+            <tr>
+                <td>{{ article.title }}</td>
+                <td>{{ article.created_at }}</td>
+                <td>{{ article.updated_at }}</td>
+                <td>{{ article.source_datetime or '' }}</td>
+                <td>{{ article.is_active }}</td>
+                <td>
+                    <a href="/admin/{{ article.id }}/edit" class="btn btn-sm btn-primary">Edit</a>
+                    <a href="/admin/{{ article.id }}/compare" class="btn btn-sm btn-secondary">Compare</a>
+                </td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<nav>
+    <ul class="pagination">
+        {% if page > 1 %}
+            <li class="page-item"><a class="page-link" href="?page=1">First</a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ page - 1 }}">Previous</a></li>
+        {% endif %}
+        {% for p in range(1, (total // per_page) + 2) %}
+            <li class="page-item {% if p == page %}active{% endif %}"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>
+        {% endfor %}
+        {% if page < (total // per_page) + 1 %}
+            <li class="page-item"><a class="page-link" href="?page={{ page + 1 }}">Next</a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ (total // per_page) + 1 }}">Last</a></li>
+        {% endif %}
+    </ul>
+    <select onchange="window.location.href='?page=1&per_page=' + this.value">
+        <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+    </select>
+</nav>
+{% endblock %}

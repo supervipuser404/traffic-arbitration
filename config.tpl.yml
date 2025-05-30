@@ -38,6 +38,10 @@ scrapper:
   use_headless: true
   browser: "chrome"
 
+admin_panel:
+  user: "user"
+  password: "password"
+
 # Другие настройки по необходимости
 parallel_sources_workers: 3
 parallel_categories_workers: 5

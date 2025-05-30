@@ -1,0 +1,65 @@
+{% extends "layouts.html" %}
+{% block content %}
+<h1>Compare Article</h1>
+<div class="row">
+    <div class="col-md-6">
+        <h3>Article</h3>
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">{{ article.title }}</h5>
+                <p class="card-text">{{ article.text }}</p>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item"><strong>Locale:</strong> {{ article.locale.code }}</li>
+                    <li class="list-group-item"><strong>Active:</strong> {{ article.is_active }}</li>
+                    <li class="list-group-item"><strong>Created:</strong> {{ article.created_at }}</li>
+                    <li class="list-group-item"><strong>Updated:</strong> {{ article.updated_at }}</li>
+                    <li class="list-group-item"><strong>Source Date:</strong> {{ article.source_datetime or 'N/A' }}</li>
+                    <li class="list-group-item"><strong>Categories:</strong> {{ article.categories|map(attribute='code')|join(', ') or 'None' }}</li>
+                    <li class="list-group-item"><strong>Geo:</strong> {{ article.geo|map(attribute='code')|join(', ') or 'None' }}</li>
+                    <li class="list-group-item"><strong>Tags:</strong> {{ article.tags|map(attribute='code')|join(', ') or 'None' }}</li>
+                </ul>
+                {% if article.image %}
+                    <div class="card-footer">
+                        <strong>Image:</strong>
+                        <img src="{{ article.image.link }}" alt="Article Image" class="img-fluid" style="max-width: 200px;">
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <h3>External Article</h3>
+        {% if external_article %}
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ external_article.title }}</h5>
+                    <p class="card-text">{{ external_article.text }}</p>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item"><strong>Source:</strong> {{ external_article.link.content_source.name }}</li>
+                        <li class="list-group-item"><strong>Link:</strong> <a href="{{ external_article.link.link }}" target="_blank">{{ external_article.link.link }}</a></li>
+                        <li class="list-group-item"><strong>Processed:</strong> {{ external_article.is_processed }}</li>
+                        <li class="list-group-item"><strong>Created:</strong> {{ external_article.created_at }}</li>
+                        <li class="list-group-item"><strong>Updated:</strong> {{ external_article.updated_at }}</li>
+                        <li class="list-group-item"><strong>Categories:</strong> {{ external_article.link.categories|map(attribute='code')|join(', ') or 'None' }}</li>
+                    </ul>
+                    {% set preview = external_article.link.external_article_previews[0] if external_article.link.external_article_previews else None %}
+                    {% if preview and preview.image_link %}
+                        <div class="card-footer">
+                            <strong>Image:</strong>
+                            <img src="{{ preview.image_link }}" alt="Preview Image" class="img-fluid" style="max-width: 200px;">
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                No external article linked.
+            </div>
+        {% endif %}
+    </div>
+</div>
+<div class="mt-3">
+    <a href="/admin" class="btn btn-primary">Back to List</a>
+    <a href="/admin/{{ article.id }}/edit" class="btn btn-secondary">Edit Article</a>
+</div>
+{% endblock %}

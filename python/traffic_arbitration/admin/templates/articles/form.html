@@ -1,0 +1,162 @@
+{% extends "layouts.html" %}
+{% block content %}
+<h1>{% if article %}Edit Article{% else %}Create Article{% endif %}</h1>
+{% if errors %}
+    {% for error in errors %}
+        <div class="alert alert-danger">{{ error }}</div>
+    {% endfor %}
+{% endif %}
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label>Title</label>
+        <input type="text" name="title" value="{{ article.title if article else external_article.title if external_article else '' }}" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>Text</label>
+        <textarea name="text" class="form-control" required>{{ article.text if article else external_article.text if external_article else '' }}</textarea>
+    </div>
+    <div class="mb-3">
+        <label>Locale</label>
+        <select name="locale_id" class="form-control" required>
+            {% for locale in locales %}
+                <option value="{{ locale.id }}" {% if article and article.locale_id == locale.id or not article and locale.code == 'ru' %}selected{% endif %}>{{ locale.code }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label>Parent Article</label>
+        <select name="parent_id" class="form-control">
+            <option value="">None</option>
+            {% for parent in articles %}
+                <option value="{{ parent.id }}" {% if article and article.parent_id == parent.id %}selected{% endif %}>{{ parent.title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label>External Article</label>
+        <select name="external_article_id" class="form-control">
+            <option value="">None</option>
+            {% for ext_article in external_articles %}
+                <option value="{{ ext_article.id }}" {% if article and article.external_article_id == ext_article.id %}selected{% endif %}>{{ ext_article.title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label>Image URL</label>
+        <input type="text" name="image_url" value="{{ article.image.link if article and article.image else '' }}" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label>Image File</label>
+        <input type="file" name="image_file" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label>Active</label>
+        <input type="checkbox" name="is_active" {% if (article and article.is_active) or not article %}checked{% endif %}>
+    </div>
+    <div class="mb-3">
+        <label>Source Date</label>
+        <input type="datetime-local" name="source_datetime" value="{{ article.source_datetime.isoformat() if article and article.source_datetime else '' }}" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label>Categories</label>
+        <select name="category_ids" multiple class="form-control">
+            {% for category in categories %}
+                <option value="{{ category.id }}" {% if article and category.id in (article.categories|map(attribute='id')|list) %}selected{% endif %}>{{ category.code }}</option>
+            {% endfor %}
+        </select>
+        <a href="#" data-bs-toggle="modal" data-bs-target="#addCategoryModal">Add Category</a>
+    </div>
+    <div class="mb-3">
+        <label>Geo</label>
+        <select name="geo_ids" multiple class="form-control">
+            {% for geo in geo_tags %}
+                <option value="{{ geo.id }}" {% if article and geo.id in (article.geo|map(attribute='id')|list) %}selected{% endif %}>{{ geo.code }}</option>
+            {% endfor %}
+        </select>
+        <a href="#" data-bs-toggle="modal" data-bs-target="#addGeoModal">Add Geo</a>
+    </div>
+    <div class="mb-3">
+        <label>Tags</label>
+        <select name="tag_ids" multiple class="form-control">
+            {% for tag in tags %}
+                <option value="{{ tag.id }}" {% if article and tag.id in (article.tags|map(attribute='id')|list) %}selected{% endif %}>{{ tag.code }}</option>
+            {% endfor %}
+        </select>
+        <a href="#" data-bs-toggle="modal" data-bs-target="#addTagModal">Add Tag</a>
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
+
+<!-- Modals -->
+<div class="modal fade" id="addCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/admin/categories">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Category</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label>Code</label>
+                        <input type="text" name="code" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>Description</label>
+                        <textarea name="description" class="form-control"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="addGeoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/admin/geo">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Geo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label>Code</label>
+                        <input type="text" name="code" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>Description</label>
+                        <textarea name="description" class="form-control"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="addTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/admin/tags">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Tag</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label>Code</label>
+                        <input type="text" name="code" class="form-control" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

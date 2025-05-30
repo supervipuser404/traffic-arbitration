@@ -104,7 +104,7 @@ class Article(Base):
     updated_at = Column(DateTime, server_default=func.now())
     source_datetime = Column(DateTime)
 
-    parent = relationship("Article", remote_side="articles.id", back_populates="children")
+    parent = relationship("Article", remote_side="Article.id", back_populates="children")
     children = relationship("Article", back_populates="parent")
     external_article = relationship("ExternalArticle", back_populates="articles")
     locale = relationship("Locale", back_populates="articles")
