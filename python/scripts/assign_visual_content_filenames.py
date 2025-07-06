@@ -17,15 +17,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- 2. Импорт моделей и конфигурации проекта ---
 from traffic_arbitration.models import VisualContent
 from traffic_arbitration.common.config import config as project_config
-
-
-def get_database_url() -> str:
-    """Формирует SQLAlchemy URL из глобального объекта конфигурации."""
-    db_config = project_config['database']
-    return (
-        f"postgresql://{db_config['user']}:{db_config['password']}"
-        f"@{db_config['host']}:{db_config['port']}/{db_config['dbname']}"
-    )
+from traffic_arbitration.db import get_database_url
 
 
 def generate_unique_filename(extension: str | None) -> str:

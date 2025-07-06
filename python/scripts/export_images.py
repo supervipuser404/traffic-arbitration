@@ -16,19 +16,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- 2. Импорт моделей и конфигурации проекта ---
 from traffic_arbitration.models import VisualContent, Article, ArticlePreview
 from traffic_arbitration.common.config import config as project_config
+from traffic_arbitration.db import get_database_url
 
 # --- 3. Конфигурация ---
 # Определяем путь к папке для контентных изображений
 STATIC_CONTENT_DIR = project_root / "traffic_arbitration" / "web" / "static" / "img" / "content"
-
-
-def get_database_url() -> str:
-    """Формирует SQLAlchemy URL из глобального объекта конфигурации."""
-    db_config = project_config['database']
-    return (
-        f"postgresql://{db_config['user']}:{db_config['password']}"
-        f"@{db_config['host']}:{db_config['port']}/{db_config['dbname']}"
-    )
 
 
 def export_images_to_static():

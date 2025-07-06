@@ -5,6 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import yaml
 
+from traffic_arbitration.common.config import config as project_config
+
 
 class TunnelPostgresConnection:
     """
@@ -115,3 +117,12 @@ class TunnelPostgresSession:
             self._engine.dispose()
         if self._server:
             self._server.stop()
+
+
+def get_database_url() -> str:
+    """Формирует SQLAlchemy URL из глобального объекта конфигурации."""
+    db_config = project_config['database']
+    return (
+        f"postgresql://{db_config['user']}:{db_config['password']}"
+        f"@{db_config['host']}:{db_config['port']}/{db_config['dbname']}"
+    )
