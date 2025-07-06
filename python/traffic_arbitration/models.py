@@ -122,6 +122,7 @@ class ArticlePreview(Base):
     title = Column(String(512))
     text = Column(Text)
     image = Column(Text)
+    is_active = Column(Boolean, default=True, nullable=False, server_default='true')
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now())
     article = relationship("Article", back_populates="previews")
