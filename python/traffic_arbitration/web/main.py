@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from config import config
+from traffic_arbitration.common.config import config
 
 BASE_DIR = Path(__file__).resolve().parent
 
