@@ -5,4 +5,5 @@
 /.**
 **/dev_*.py
 **/jquery*.js
+**/static/img/content/**
 !**/jquery*.min.js
