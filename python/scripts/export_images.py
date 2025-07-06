@@ -95,7 +95,14 @@ def export_images_to_static():
                 logging.warning(f"  - Пропуск VC ID: {vc.id}, Файл: {vc.name}. Отсутствуют бинарные данные (vc.data).")
                 continue
 
-            destination_path = STATIC_CONTENT_DIR / vc.name
+            filename = vc.name
+            subdir_name = filename[:2]
+            destination_dir = STATIC_CONTENT_DIR / subdir_name
+
+            # Убедимся, что подпапка существует
+            destination_dir.mkdir(parents=True, exist_ok=True)  # <-- ДОБАВЛЕНО
+
+            destination_path = destination_dir / filename  # <-- ИЗМЕНЕНО
 
             if destination_path.exists():
                 # Файл уже существует, пропускаем

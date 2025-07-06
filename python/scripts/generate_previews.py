@@ -90,7 +90,10 @@ def generate_previews_for_articles():
             if article.image:
                 if article.image.name:
                     # Если есть имя файла, это локальный статический ресурс
-                    image_path = f"{STATIC_IMAGE_PATH_PREFIX}{article.image.name}"
+                    # Формируем путь с подпапкой по первым двум символам
+                    filename = article.image.name
+                    subdir = filename[:2]
+                    image_path = f"{STATIC_IMAGE_PATH_PREFIX}{subdir}/{filename}"  # <-- ИЗМЕНЕНО
                     logging.info(f"    > Найдено локальное изображение: {image_path}")
                 elif article.image.link:
                     # Иначе, если есть ссылка, это внешний ресурс
