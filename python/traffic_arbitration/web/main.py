@@ -2,12 +2,10 @@
 
 from pathlib import Path
 import json
-import uuid
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
@@ -128,46 +126,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-# --- Схемы для API Push-уведомлений ---
-class DeviceRegisterRequest(BaseModel):
-    device_id: str
-    token: str
-
-
-class EventRequest(BaseModel):
-    device_id: str
-
-
-# --- API для Push-уведомлений ---
-@app.post("/api/v1/device/get-id")
-async def get_device_id():
-    """
-    Генерирует и возвращает уникальный идентификатор для устройства.
-    """
-    device_id = str(uuid.uuid4())
-    return JSONResponse(content={"device_id": device_id})
-
-
-@app.post("/api/v1/device/register")
-async def register_device(payload: DeviceRegisterRequest):
-    """
-    Принимает device_id и токен для push-уведомлений (заглушка).
-    """
-    # В будущем здесь будет логика сохранения токена в БД
-    print(f"Registering device {payload.device_id} with token {payload.token}")
-    return JSONResponse(content={"status": "ok"})
-
-
-@app.post("/api/v1/event/{eventType}")
-async def log_event(eventType: str, payload: EventRequest):
-    """
-    Логирует событие от устройства (заглушка).
-    """
-    # В будущем здесь будет логика сохранения события в БД
-    print(f"Event '{eventType}' for device {payload.device_id}")
-    return JSONResponse(content={"status": "ok"})
 
 
 # Основной маршрут для главной страницы
