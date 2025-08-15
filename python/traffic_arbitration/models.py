@@ -95,6 +95,11 @@ class Article(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String(512), nullable=False)
     text = Column(Text, nullable=False)
+    slug = Column(String(128), nullable=False, unique=True,
+                  comment="Человекочитаемый идентификатор для URL. Генерируется из транслитерированного заголовка (title). "
+                          "Максимальная длина 128 символов. Правила генерации: "
+                          "1. Берется 120 символов из транслитерированного заголовка. "
+                          "2. При нарушении уникальности добавляется числовой суффикс (например, '-2').")
     parent_id = Column(Integer, ForeignKey("articles.id"), nullable=True)  # Иерархия
     external_article_id = Column(Integer, ForeignKey("external_articles.id"), nullable=True)  # Внешняя статья
     locale_id = Column(Integer, ForeignKey("locales.id"), nullable=False)  # Локаль
@@ -131,7 +136,7 @@ class ArticlePreview(Base):
 class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True)
-    code = Column(String(64), unique=True, nullable=False)
+    code = Column(String(64), unique=True, nullable=False)  # Человекочитаемый идентификатор (slug)
     description = Column(Text)
     labels = relationship("CategoryLabel", back_populates="category")
 

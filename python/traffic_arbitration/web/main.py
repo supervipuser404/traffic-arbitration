@@ -1,16 +1,20 @@
 # /home/andrey/Projects/Work/traffic-arbitration/python/traffic_arbitration/web/main.py
 
 from pathlib import Path
-from fastapi import FastAPI, Request, Query, HTTPException, Depends
+import json
+import uuid
+from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
 from traffic_arbitration.common.config import config
 from traffic_arbitration.models import Article, ArticlePreview as ArticlePreviewDB
+from traffic_arbitration.db.queries import get_article_by_slug_and_category
 from .cache import news_cache
 from .services import NewsRanker
 from .schemas import ArticlePreviewSchema, ArticleSchema
@@ -126,6 +130,46 @@ def get_db():
         db.close()
 
 
+# --- Схемы для API Push-уведомлений ---
+class DeviceRegisterRequest(BaseModel):
+    device_id: str
+    token: str
+
+
+class EventRequest(BaseModel):
+    device_id: str
+
+
+# --- API для Push-уведомлений ---
+@app.post("/api/v1/device/get-id")
+async def get_device_id():
+    """
+    Генерирует и возвращает уникальный идентификатор для устройства.
+    """
+    device_id = str(uuid.uuid4())
+    return JSONResponse(content={"device_id": device_id})
+
+
+@app.post("/api/v1/device/register")
+async def register_device(payload: DeviceRegisterRequest):
+    """
+    Принимает device_id и токен для push-уведомлений (заглушка).
+    """
+    # В будущем здесь будет логика сохранения токена в БД
+    print(f"Registering device {payload.device_id} with token {payload.token}")
+    return JSONResponse(content={"status": "ok"})
+
+
+@app.post("/api/v1/event/{eventType}")
+async def log_event(eventType: str, payload: EventRequest):
+    """
+    Логирует событие от устройства (заглушка).
+    """
+    # В будущем здесь будет логика сохранения события в БД
+    print(f"Event '{eventType}' for device {payload.device_id}")
+    return JSONResponse(content={"status": "ok"})
+
+
 # Основной маршрут для главной страницы
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
@@ -149,16 +193,26 @@ async def manifest(request: Request):
 
 
 # API-эндпоинт, возвращающий данные новостей
-@app.get("/news", response_model=list[ArticlePreviewSchema])
+@app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
 async def get_news(
-        limit: int = Query(20, ge=1, le=100),
-        offset: int = Query(0, ge=0),
-        db: Session = Depends(get_db)  # Получаем сессию через Depends
+        request_str: str = Form(..., alias="request"),
+        b: str = Form(...),
+        after: int = Form(0),
+        db: Session = Depends(get_db)
 ):
     """
-    Возвращает список превью новостей.
-    Данные берутся из кэша и ранжируются.
+    Возвращает список превью новостей на основе POST-запроса.
     """
+    try:
+        # Просто парсим JSON, но пока не используем его для фильтрации
+        request_params = json.loads(request_str)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in 'request' parameter")
+
+    # Устанавливаем лимит по умолчанию, так как он больше не передается
+    limit = 20
+    offset = after
+
     # Запрашиваем из БД объекты SQLAlchemy
     news_previews_db = (
         db.query(ArticlePreviewDB)
@@ -174,12 +228,21 @@ async def get_news(
     return news_previews_db
 
 
-# Пример для эндпоинта полной статьи
-@app.get("/articles/{article_id}", response_model=ArticleSchema)
-def read_article(article_id: int, db: Session = Depends(get_db)):
-    db_article = db.query(Article).filter(Article.id == article_id).first()
+@app.get("/{category}/{article_slug}", response_model=ArticleSchema)
+def read_article_preview(category: str, article_slug: str, db: Session = Depends(get_db)):
+    db_article = get_article_by_slug_and_category(db, article_slug, category)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
+    # Здесь должна быть логика для отображения превью
+    return db_article
+
+
+@app.get("/{category}/{article_slug}/full", response_model=ArticleSchema)
+def read_article_full(category: str, article_slug: str, db: Session = Depends(get_db)):
+    db_article = get_article_by_slug_and_category(db, article_slug, category)
+    if db_article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    # Здесь должна быть логика для отображения полной статьи
     return db_article
 
 
