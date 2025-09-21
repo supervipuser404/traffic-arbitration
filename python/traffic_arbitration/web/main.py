@@ -1,7 +1,8 @@
 # /home/andrey/Projects/Work/traffic-arbitration/python/traffic_arbitration/web/main.py
 
 from pathlib import Path
-from fastapi import FastAPI, Request, Query, HTTPException, Depends
+import json
+from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,6 +12,8 @@ from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
 from traffic_arbitration.common.config import config
 from traffic_arbitration.models import Article, ArticlePreview as ArticlePreviewDB
+from traffic_arbitration.db.queries import get_article_by_slug_and_category
+from .utils import insert_teasers
 from .cache import news_cache
 from .services import NewsRanker
 from .schemas import ArticlePreviewSchema, ArticleSchema
@@ -149,16 +152,26 @@ async def manifest(request: Request):
 
 
 # API-эндпоинт, возвращающий данные новостей
-@app.get("/news", response_model=list[ArticlePreviewSchema])
+@app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
 async def get_news(
-        limit: int = Query(20, ge=1, le=100),
-        offset: int = Query(0, ge=0),
-        db: Session = Depends(get_db)  # Получаем сессию через Depends
+        request_str: str = Form(..., alias="request"),
+        b: str = Form(...),
+        after: int = Form(0),
+        db: Session = Depends(get_db)
 ):
     """
-    Возвращает список превью новостей.
-    Данные берутся из кэша и ранжируются.
+    Возвращает список превью новостей на основе POST-запроса.
     """
+    try:
+        # Просто парсим JSON, но пока не используем его для фильтрации
+        request_params = json.loads(request_str)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in 'request' parameter")
+
+    # Устанавливаем лимит по умолчанию, так как он больше не передается
+    limit = 20
+    offset = after
+
     # Запрашиваем из БД объекты SQLAlchemy
     news_previews_db = (
         db.query(ArticlePreviewDB)
@@ -174,13 +187,40 @@ async def get_news(
     return news_previews_db
 
 
-# Пример для эндпоинта полной статьи
-@app.get("/articles/{article_id}", response_model=ArticleSchema)
-def read_article(article_id: int, db: Session = Depends(get_db)):
-    db_article = db.query(Article).filter(Article.id == article_id).first()
+@app.get("/{category}/{article_slug}", response_class=HTMLResponse)
+def read_article_preview(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
+    db_article = get_article_by_slug_and_category(db, article_slug, category)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
-    return db_article
+    
+    context = template_context(request)
+    context.update({
+        "article": db_article,
+        "bg": "https://example.com/background.jpg"  # Заглушка для URL
+    })
+    return templates.TemplateResponse("article.html", context)
+
+
+@app.get("/{category}/{article_slug}/full", response_class=HTMLResponse)
+def read_article_full(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
+    db_article = get_article_by_slug_and_category(db, article_slug, category)
+    if db_article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Обрабатываем контент статьи для вставки тизеров
+    processed_content = insert_teasers(db_article.content)
+    
+    # Создаем копию объекта статьи, чтобы не изменять исходные данные из БД
+    from copy import copy
+    article_with_teasers = copy(db_article)
+    article_with_teasers.content = processed_content
+        
+    context = template_context(request)
+    context.update({
+        "article": article_with_teasers,
+        "bg": "https://example.com/background.jpg"  # Заглушка для URL
+    })
+    return templates.TemplateResponse("article_full.html", context)
 
 
 if __name__ == "__main__":

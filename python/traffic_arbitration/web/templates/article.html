@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ article.title }}</h1>
+    <p><em>{{ article.publication_date }}</em></p>
+    {% if article.image %}
+        <img src="{{ article.image }}" alt="{{ article.title }}" class="news-image">
+    {% endif %}
+    <div>{{ article.text | safe }}</div>
+</div>
+{% endblock %}

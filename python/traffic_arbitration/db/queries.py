@@ -5,7 +5,7 @@ from sqlalchemy import select, func, update, delete, bindparam
 from sqlalchemy.dialects.postgresql import insert
 from traffic_arbitration.models import (
     ContentSource, ExternalArticleLink, ExternalArticlePreview, ExternalArticle,
-    VisualContent, Category, ExternalArticleLinkCategory
+    VisualContent, Category, ExternalArticleLinkCategory, Article, ArticleCategory
 )
 from traffic_arbitration.common.utils import unify_str_values
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -518,3 +518,25 @@ def mark_links_processed_batch(session: Session, source_id: int, links: List[str
                 updated_at=datetime.now(timezone.utc)
             )
         )
+
+
+def get_article_by_slug_and_category(session: Session, article_slug: str, category_code: str) -> Optional[Article]:
+    """
+    Возвращает статью по ее slug и коду категории.
+
+    Args:
+        session: SQLAlchemy сессия.
+        article_slug: Slug статьи.
+        category_code: Код категории.
+
+    Returns:
+        Объект Article или None, если статья не найдена.
+    """
+    stmt = (
+        select(Article)
+        .join(ArticleCategory, Article.id == ArticleCategory.article_id)
+        .join(Category, ArticleCategory.category_id == Category.id)
+        .where(Article.slug == article_slug, Category.code == category_code, Article.is_active == True)
+    )
+    result = session.execute(stmt).scalar_one_or_none()
+    return result
