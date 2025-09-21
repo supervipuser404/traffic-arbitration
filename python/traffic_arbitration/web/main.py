@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from traffic_arbitration.common.config import config
 from traffic_arbitration.models import Article, ArticlePreview as ArticlePreviewDB
 from traffic_arbitration.db.queries import get_article_by_slug_and_category
+from .utils import insert_teasers
 from .cache import news_cache
 from .services import NewsRanker
 from .schemas import ArticlePreviewSchema, ArticleSchema
@@ -186,22 +187,40 @@ async def get_news(
     return news_previews_db
 
 
-@app.get("/{category}/{article_slug}", response_model=ArticleSchema)
-def read_article_preview(category: str, article_slug: str, db: Session = Depends(get_db)):
+@app.get("/{category}/{article_slug}", response_class=HTMLResponse)
+def read_article_preview(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
     db_article = get_article_by_slug_and_category(db, article_slug, category)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
-    # Здесь должна быть логика для отображения превью
-    return db_article
+    
+    context = template_context(request)
+    context.update({
+        "article": db_article,
+        "bg": "https://example.com/background.jpg"  # Заглушка для URL
+    })
+    return templates.TemplateResponse("article.html", context)
 
 
-@app.get("/{category}/{article_slug}/full", response_model=ArticleSchema)
-def read_article_full(category: str, article_slug: str, db: Session = Depends(get_db)):
+@app.get("/{category}/{article_slug}/full", response_class=HTMLResponse)
+def read_article_full(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
     db_article = get_article_by_slug_and_category(db, article_slug, category)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
-    # Здесь должна быть логика для отображения полной статьи
-    return db_article
+
+    # Обрабатываем контент статьи для вставки тизеров
+    processed_content = insert_teasers(db_article.content)
+    
+    # Создаем копию объекта статьи, чтобы не изменять исходные данные из БД
+    from copy import copy
+    article_with_teasers = copy(db_article)
+    article_with_teasers.content = processed_content
+        
+    context = template_context(request)
+    context.update({
+        "article": article_with_teasers,
+        "bg": "https://example.com/background.jpg"  # Заглушка для URL
+    })
+    return templates.TemplateResponse("article_full.html", context)
 
 
 if __name__ == "__main__":
