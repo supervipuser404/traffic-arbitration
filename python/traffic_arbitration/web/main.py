@@ -16,7 +16,7 @@ from traffic_arbitration.models import Article, ArticlePreview as ArticlePreview
 from traffic_arbitration.db.queries import get_article_by_slug_and_category
 from .utils import insert_teasers
 from .cache import news_cache
-from .services import NewsRanker
+from .services import NewsRanker, TeaserService
 from .schemas import (
     ArticlePreviewSchema,
     ArticleSchema,
@@ -111,6 +111,8 @@ app = FastAPI(lifespan=lifespan)
 # --- Инициализация сервисов ---
 # Создаем единственный экземпляр ранжировщика, передавая ему кэш
 news_ranker = NewsRanker(cache=news_cache)
+# Создаем сервис тизеров, передавая ему ранжировщик как зависимость
+teaser_service = TeaserService(news_ranker=news_ranker)
 
 # Подключаем статику: здесь файлы CSS, JS, изображения и т.п.
 app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
@@ -193,6 +195,7 @@ async def get_news(
     return news_previews_db
 
 
+# --- ОБНОВЛЕННЫЙ ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
@@ -214,19 +217,16 @@ async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
     # На данном этапе данные uid, ip, ua и т.д. используются только для
     # валидации, но не для логики. В будущем они понадобятся для ML.
+    # Вся логика инкапсулирована в TeaserService.
+    # В будущем мы будем расширять TeaserService, а не этот эндпоинт.
 
-    response_widgets: Dict[str, List[ArticlePreviewDB]] = {}
+    # Передаем только те данные, которые сервису нужны *сейчас*
+    response_widgets = teaser_service.get_teasers_for_widgets(
+        widgets=request_data.widgets
+    )
 
-    for widget_name, quantity in request_data.widgets.items():
-        # Запрашиваем N=quantity лучших (самых свежих) превью
-        # из кэша через NewsRanker.
-        # offset=0, чтобы всегда брать "топ".
-        previews = news_ranker.get_ranked_previews(limit=quantity, offset=0)
-        response_widgets[widget_name] = previews
-
-    # FastAPI/Pydantic автоматически преобразует List[ArticlePreviewDB]
-    # (это алиас для модели ArticlePreview) в List[ArticlePreviewSchema]
-    # благодаря response_model и from_attributes = True в схеме.
+    # FastAPI/Pydantic автоматически преобразует List[ArticlePreview] (модель)
+    # в List[ArticlePreviewSchema] (схему) для JSON-ответа.
     return {"widgets": response_widgets}
 
 
