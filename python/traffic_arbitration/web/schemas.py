@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, computed_field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 # --- Базовая конфигурация ---
@@ -96,3 +96,27 @@ class ArticleSchema(BaseSchema):
     # Его можно добавить, если оно будет формироваться в сервисном слое
     # на основе `article.image`.
     # image_url: Optional[str] = None
+
+
+# --- Схемы для эндпоинта тизеров /etc ---
+
+class TeaserRequestSchema(BaseModel):
+    """
+    Схема для валидации входящего запроса на /etc.
+    """
+    uid: str
+    ip: str  # Для более строгой валидации можно использовать pydantic.IPvAnyAddress
+    ua: str
+    url: str  # Для более строгой валидации можно использовать pydantic.HttpUrl
+    loc: str = "ru"
+    w: int
+    h: int
+    d: Optional[float] = None
+    widgets: Dict[str, int]  # { "widget_name": quantity }
+
+
+class TeaserResponseSchema(BaseModel):
+    """
+    Схема для ответа эндпоинта /etc.
+    """
+    widgets: Dict[str, List[ArticlePreviewSchema]]
