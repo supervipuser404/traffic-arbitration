@@ -2,7 +2,8 @@
 
 from pathlib import Path
 import json
-from fastapi import FastAPI, Request, Form, HTTPException, Depends
+from typing import List, Dict
+from fastapi import FastAPI, Request, Form, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -16,7 +17,12 @@ from traffic_arbitration.db.queries import get_article_by_slug_and_category
 from .utils import insert_teasers
 from .cache import news_cache
 from .services import NewsRanker
-from .schemas import ArticlePreviewSchema, ArticleSchema
+from .schemas import (
+    ArticlePreviewSchema,
+    ArticleSchema,
+    TeaserRequestSchema,
+    TeaserResponseSchema
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -187,12 +193,49 @@ async def get_news(
     return news_previews_db
 
 
+@app.post("/etc", response_model=TeaserResponseSchema)
+async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
+    """
+    API-эндпоинт для запроса тизеров (новостных превью) для виджетов.
+
+    Принимает (в теле запроса):
+    - uid: Идентификатор пользователя
+    - ip: IP-адрес
+    - ua: User-Agent
+    - url: URL страницы
+    - loc: Локаль (по умолч. "ru")
+    - w: Ширина
+    - h: Высота
+    - d: Плотность (опционально)
+    - widgets: Словарь {widget_name: quantity}
+
+    Возвращает:
+    - Словарь {widgets: {widget_name: [список ArticlePreviewSchema]}}
+    """
+    # На данном этапе данные uid, ip, ua и т.д. используются только для
+    # валидации, но не для логики. В будущем они понадобятся для ML.
+
+    response_widgets: Dict[str, List[ArticlePreviewDB]] = {}
+
+    for widget_name, quantity in request_data.widgets.items():
+        # Запрашиваем N=quantity лучших (самых свежих) превью
+        # из кэша через NewsRanker.
+        # offset=0, чтобы всегда брать "топ".
+        previews = news_ranker.get_ranked_previews(limit=quantity, offset=0)
+        response_widgets[widget_name] = previews
+
+    # FastAPI/Pydantic автоматически преобразует List[ArticlePreviewDB]
+    # (это алиас для модели ArticlePreview) в List[ArticlePreviewSchema]
+    # благодаря response_model и from_attributes = True в схеме.
+    return {"widgets": response_widgets}
+
+
 @app.get("/{category}/{article_slug}", response_class=HTMLResponse)
 def read_article_preview(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
     db_article = get_article_by_slug_and_category(db, article_slug, category)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
-    
+
     context = template_context(request)
     context.update({
         "article": db_article,
@@ -209,12 +252,12 @@ def read_article_full(request: Request, category: str, article_slug: str, db: Se
 
     # Обрабатываем контент статьи для вставки тизеров
     processed_content = insert_teasers(db_article.content)
-    
+
     # Создаем копию объекта статьи, чтобы не изменять исходные данные из БД
     from copy import copy
     article_with_teasers = copy(db_article)
     article_with_teasers.content = processed_content
-        
+
     context = template_context(request)
     context.update({
         "article": article_with_teasers,
