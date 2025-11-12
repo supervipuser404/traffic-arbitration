@@ -14,7 +14,6 @@
 
     <!-- Подключение jQuery и дополнительного скрипта -->
     <script src="/static/js/jquery-3.7.1.min.js"></script>
-    <script src="/static/js/load.raw.js"></script>
     <script src="/fcm.js"></script>
 
     <!-- Дополнительные метатеги -->
@@ -41,43 +40,13 @@
         </div>
     </footer>
 
-    <!-- Скрипт для загрузки контента -->
-    <script>
-        $(document).ready(function(){
-            // Загружаем новости с сервера через API
-            $.getJSON("/news?limit=50", function(data){ // Запрашиваем 50 новостей
-                let container = $("#news-container");
-                if (data.length === 0) {
-                    container.append("<p>Новостей пока нет.</p>");
-                    return;
-                }
+{% block scripts %}
+<script src="/static/js/jquery-3.7.1.min.js"></script>
+<!--
+  This is the old script that loads /news.
+  It needs to be removed.
+-->
+{% endblock %}
 
-                data.forEach(function(item){
-                    // Форматируем дату для вывода
-                    let pubDate = new Date(item.publication_date).toLocaleDateString('ru-RU', {
-                        year: 'numeric', month: 'long', day: 'numeric'
-                    });
-
-                    // Создаем HTML для новости, используя новые поля
-                    let newsHtml = `
-                        <div class="news-item">
-
-                            <div class="news-content">
-                                <h2><a href="${item.url}">${item.title}</a></h2>
-                                <div class="news-meta">
-                                    <span>${item.publication_date}</span>
-                                    ${item.author ? `<span> | ${item.author}</span>` : ''}
-                                </div>
-                                    ${item.image ? `<img src="${item.image}" alt="${item.title}" class="news-image">` : ''}
-                                <p>${item.text}</p>
-                                <a href="${item.url}" class="read-more">Читать далее...</a>
-                            </div>
-                        </div>
-                    `;
-                    container.append(newsHtml);
-                });
-            });
-        });
-    </script>
 </body>
 </html>

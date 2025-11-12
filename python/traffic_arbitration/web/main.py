@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from traffic_arbitration.models import Article, ArticlePreview as ArticlePreview
 from traffic_arbitration.db.queries import get_article_by_slug_and_category
 from .utils import insert_teasers
 from .cache import news_cache
+# Обновляем импорты сервисов
 from .services import NewsRanker, TeaserService
 from .schemas import (
     ArticlePreviewSchema,
@@ -137,10 +138,30 @@ def get_db():
         db.close()
 
 
-# Основной маршрут для главной страницы
+# --- ОБНОВЛЕННЫЙ Маршрут для главной страницы ---
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
-    return templates.TemplateResponse("index.html", template_context(request))
+    """
+    Рендерит главную страницу (которая теперь = страница категории).
+    """
+    context = template_context(request)
+    context.update({"category": None})  # Для главной страницы категория = None
+    return templates.TemplateResponse("index.html", context)
+
+
+# --- НОВЫЙ Маршрут для страниц категорий ---
+@app.get("/cat/{category}", response_class=HTMLResponse)
+async def read_category(request: Request, category: str):
+    """
+    Рендерит страницу категории. Использует тот же шаблон, что и главная.
+    """
+    # В будущем здесь может быть проверка, существует ли категория
+    # if not category_exists(category):
+    #     raise HTTPException(status_code=404, detail="Category not found")
+
+    context = template_context(request)
+    context.update({"category": category})
+    return templates.TemplateResponse("index.html", context)
 
 
 @app.get("/fcm.js")
@@ -159,7 +180,7 @@ async def manifest(request: Request):
     )
 
 
-# API-эндпоинт, возвращающий данные новостей
+# API-эндпоинт, возвращающий данные новостей (оставляем для совместимости)
 @app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
 async def get_news(
         request_str: str = Form(..., alias="request"),
@@ -195,7 +216,7 @@ async def get_news(
     return news_previews_db
 
 
-# --- ОБНОВЛЕННЫЙ ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
+# --- ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """

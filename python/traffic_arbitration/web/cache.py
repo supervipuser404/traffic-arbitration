@@ -1,104 +1,154 @@
-# /home/andrey/Projects/Work/traffic_arbitration/python/traffic_arbitration/web/cache.py
+# /home/andrey/Projects/Work/traffic-arbitration/python/traffic_arbitration/web/cache.py
 
 import logging
-from datetime import datetime, timedelta
+import time
 from threading import Lock
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
+# Убираем сломанный импорт:
+# from traffic_arbitration.db.connection import get_db_session
+# Нам нужны модели, чтобы создать правильный запрос
+from traffic_arbitration.models import ArticlePreview, Article, ArticleCategory, Category
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
-
-# Импортируем наши модели и функцию для создания URL
-from traffic_arbitration.models import Article, ArticlePreview
-from traffic_arbitration.db import get_database_url
-from scripts.generate_previews import create_excerpt, STATIC_IMAGE_PATH_PREFIX
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class NewsCache:
     """
-    Класс для кэширования превью новостей в памяти с TTL (Time-To-Live).
-    Это позволяет избежать постоянных запросов к БД на каждый вызов API.
+    Потокобезопасный кэш для хранения списка превью новостей в памяти.
     """
 
     def __init__(self, ttl_seconds: int = 300):
-        self._cache: list[ArticlePreview] = []
-        self._last_updated: datetime | None = None
-        self._ttl = timedelta(seconds=ttl_seconds)
-        self._lock = Lock()  # Блокировка для потокобезопасного обновления
+        """
+        Инициализирует кэш.
+        """
+        self.previews: list[ArticlePreview] = []
+        self.ttl_seconds = ttl_seconds
+        self.last_updated: float = 0.0
+        self.lock = Lock()
+
+        # Фабрика сессий, будет установлена из main.py
+        self.session_maker: sessionmaker | None = None
+
+        # Убираем попытку обновления из __init__,
+        # так как session_maker еще не установлен.
+
+    def set_session_maker(self, session_maker: sessionmaker):
+        """
+        Метод для 'внедрения' (injection) фабрики сессий из main.py.
+        """
+        self.session_maker = session_maker
+        logger.info("Фабрика сессий БД установлена для NewsCache.")
+
+    def force_update(self):
+        """
+        Принудительно обновляет кэш из БД.
+        Вызывается из main.py при старте приложения.
+        """
+        if not self.session_maker:
+            logger.error("Невозможно обновить кэш: фабрика сессий не установлена.")
+            return
+
+        logger.info("Принудительное обновление кэша при старте...")
+        try:
+            with self.session_maker() as db:
+                self._update_cache_from_db(db)
+        except Exception as e:
+            logger.error(f"Ошибка при принудительном обновлении кэша: {e}", exc_info=True)
 
     def _is_cache_stale(self) -> bool:
-        """Проверяет, не устарел ли кэш."""
-        if not self._cache or not self._last_updated:
-            return True
-        return datetime.now() - self._last_updated > self._ttl
+        """Проверяет, "устарел" ли кэш."""
+        return (time.monotonic() - self.last_updated) > self.ttl_seconds
 
-    def _update_cache_from_db(self):
+    def _update_if_needed(self):
         """
-        Основная функция обновления кэша. Запрашивает все активные
-        статьи из БД и генерирует для них превью.
+        Обновляет кэш, если он устарел и фабрика сессий установлена.
+        Этот метод *не* потокобезопасный, он должен быть вызван
+        внутри контекста `with self.lock:`.
         """
-        logging.info("Кэш устарел. Обновление из базы данных...")
-        database_url = get_database_url()
-        engine = create_engine(database_url)
-        session_factory = sessionmaker(bind=engine)
-        Session = scoped_session(session_factory)
-        db = Session()
+        # Проверяем, что у нас есть чем создавать сессию
+        if self.session_maker and self._is_cache_stale():
+            # Используем сессию из 'внедренной' фабрики
+            try:
+                with self.session_maker() as db:
+                    self._update_cache_from_db(db)
+            except Exception as e:
+                logger.error(f"Ошибка при фоновом обновлении кэша: {e}", exc_info=True)
+                # Сбрасываем last_updated, чтобы повторить попытку
+                self.last_updated = 0.0
+        elif not self.session_maker:
+            logger.warning("NewsCache: _update_if_needed пропущен, session_maker не установлен.")
+        else:
+            logger.debug("Кэш актуален, обновление не требуется.")
 
+    def _update_cache_from_db(self, db: Session):
+        """
+        Загружает *активные* превью из базы данных, обогащая их
+        датой публикации и категорией из связанной статьи.
+        (Этот код из предыдущего шага уже правильный)
+        """
         try:
-            # Запрашиваем только активные статьи
-            active_articles = db.query(Article).filter(Article.is_active == True).all()
+            logger.info("Кэш устарел. Обновление из базы данных...")
+
+            query = (
+                select(
+                    ArticlePreview.id,
+                    ArticlePreview.article_id,
+                    ArticlePreview.title,
+                    ArticlePreview.text,
+                    ArticlePreview.image,
+                    ArticlePreview.is_active,
+                    ArticlePreview.created_at,
+                    Article.source_datetime.label("publication_date"),
+                    Category.code.label("category")
+                )
+                .join(Article, ArticlePreview.article_id == Article.id)
+                .join(ArticleCategory, Article.id == ArticleCategory.article_id)
+                .join(Category, ArticleCategory.category_id == Category.id)
+                .filter(ArticlePreview.is_active == True, Article.is_active == True)
+            )
+
+            result = db.execute(query).mappings().all()
 
             new_previews = []
-            for article in active_articles:
-                # Используем логику из наших скриптов для консистентности
-                excerpt_text = create_excerpt(article.text, 300)
-                image_path = None
-                if article.image:
-                    if article.image.name:
-                        filename = article.image.name
-                        subdir = filename[:2]
-                        image_path = f"{STATIC_IMAGE_PATH_PREFIX}{subdir}/{filename}"
-                    elif article.image.link:
-                        image_path = article.image.link
+            for preview_data_row in result:
+                preview_data = dict(preview_data_row)
 
-                # Создаем Pydantic-совместимый объект (или используем существующий ArticlePreview)
-                # Для простоты здесь создадим словарь, который соответствует модели
-                preview_data = {
-                    "id": article.id,
-                    "title": article.title,
-                    "excerpt": excerpt_text,
-                    "author": "Редакция",  # Заглушка, можно добавить в модель Article
-                    "publication_date": article.source_datetime or article.created_at,
-                    "url": f"/news/{article.id}/some-slug",  # Заглушка для slug
-                    "image": image_path
-                }
-                new_previews.append(ArticlePreview(**preview_data))
+                publication_date = preview_data.pop("publication_date", None)
+                category = preview_data.pop("category", None)
 
-            self._cache = new_previews
-            self._last_updated = datetime.now()
-            logging.info(f"Кэш успешно обновлен. Загружено {len(self._cache)} превью.")
+                preview_obj = ArticlePreview(**preview_data)
+
+                preview_obj.publication_date = publication_date
+                preview_obj.category = category
+
+                new_previews.append(preview_obj)
+
+            with self.lock:
+                self.previews = new_previews
+
+            self.last_updated = time.monotonic()
+            logger.info(f"Кэш успешно обновлен. Загружено {len(self.previews)} превью.")
 
         except Exception as e:
-            logging.error(f"Ошибка при обновлении кэша: {e}", exc_info=True)
-        finally:
-            db.close()
+            logger.error(f"Ошибка при обновлении кэша: {e}", exc_info=True)
+            # Не сбрасываем last_updated, чтобы не пытаться обновиться
+            # снова немедленно.
 
     def get_previews(self) -> list[ArticlePreview]:
         """
-        Возвращает список превью. Если кэш устарел, обновляет его.
-        Использует блокировку, чтобы избежать гонки состояний при обновлении.
+        Возвращает список кэшированных превью.
+        Автоматически обновляет кэш, если он устарел.
+        Этот метод потокобезопасен.
         """
-        if self._is_cache_stale():
-            with self._lock:
-                # Повторная проверка внутри блокировки на случай,
-                # если другой поток уже обновил кэш, пока мы ждали.
-                if self._is_cache_stale():
-                    self._update_cache_from_db()
+        with self.lock:
+            try:
+                self._update_if_needed()
+            except Exception as e:
+                logger.error(f"Не удалось обновить кэш. Возврат старых данных. Ошибка: {e}", exc_info=True)
 
-        return self._cache
+            return list(self.previews)
 
 
-# Создаем единственный экземпляр кэша для всего приложения
-news_cache = NewsCache(ttl_seconds=60)  # Кэш живет 1 минуту для демонстрации
+# --- Глобальный экземпляр ---
+news_cache = NewsCache(ttl_seconds=60)
