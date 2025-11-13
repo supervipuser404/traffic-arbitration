@@ -20,11 +20,7 @@ class NewsCache:
     def __init__(self, ttl_seconds: int = 300):
         self.ttl = ttl_seconds
 
-        # --- ИЗМЕНЕНИЕ: Тип данных в кэше ---
-        # Мы снова можем безопасно хранить List[ArticlePreview],
-        # потому что теперь мы будем "отсоединять" их от сессии.
         self.previews: List[ArticlePreview] = []
-        # --- Конец изменения ---
 
         self.last_updated: float = 0
         self.update_lock = threading.Lock()
@@ -106,6 +102,7 @@ class NewsCache:
 
                 # 3. Создаем объект модели
                 try:
+                    # Этот объект "transient" (не привязан к сессии)
                     preview_obj = ArticlePreview(**model_data)
 
                     # 4. "Прикрепляем" дополнительные данные к самому объекту
@@ -117,20 +114,13 @@ class NewsCache:
                 except TypeError as e:
                     logger.error(f"Ошибка при создании ArticlePreview: {e}. Данные: {model_data}")
 
-            # --- ИЗМЕНЕНИЕ: "Отсоединяем" объекты от сессии ---
-            # Это ключевой шаг. Объекты становятся "Detached"
-            # и могут безопасно храниться в кэше.
-            for obj in new_previews:
-                db_session.expunge(obj)
-            # --- Конец изменения ---
-
             # Атомарно заменяем старые данные новыми
             self.previews = new_previews
             self.last_updated = time.time()
             logger.info(f"Кэш успешно обновлен. Загружено {len(self.previews)} превью.")
 
-        # Сессия (db_session) здесь закрывается, но объекты в
-        # self.previews теперь "отсоединены" и безопасны.
+        # Сессия (db_session) здесь закрывается.
+        # Объекты в self.previews безопасны для хранения.
 
     def force_update(self):
         """
