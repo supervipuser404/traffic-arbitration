@@ -1,406 +1,362 @@
 {% extends "layout.html" %}
 
+{#
+  Этот блок определяет заголовок страницы.
+  Если категория передана из main.py, мы показываем ее,
+  иначе показываем "Главная".
+#}
 {% block title %}
-  {% if category %}{{ category | capitalize }}{% else %}Главная страница{% endif %} - {{ config.company_short_name }}
+    {% if category %}
+        Категория: {{ category }}
+    {% else %}
+        Главная страница
+    {% endif %}
+    :: {{ config.company_name }}
 {% endblock %}
 
+{#
+  Этот блок вставляет CSS-стили прямо в <head> страницы.
+  Они нужны для работы нашей новой сетки тизеров.
+#}
 {% block head %}
-{{ super() }}
-<style>
-  /* Стили для контейнера ленты */
-  .feed-container {
-    display: grid;
-    /* Ключевое CSS-правило для адаптивной сетки.
-      Браузер сам создаст столько колонок, сколько поместится.
-      - minmax(280px, 1fr): Каждая колонка будет минимум 280px
-        и максимум 1fr (равномерно займет оставшееся место).
-      - Это автоматически реализует ваше "от 1 до 4 тизеров".
-    */
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px; /* Отступ между тизерами */
-    padding: 20px;
-    max-width: 1600px;
-    margin: 0 auto;
-  }
+    {{ super() }}
+    <style>
+        /* --- Стили Сетки --- */
+        .main-container {
+            /* Ограничиваем максимальную ширину для 4 колонок */
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
 
-  /* Стили для самого виджета-тизера */
-  .teaser-widget {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-    background: #fff;
-    transition: transform 0.2s ease-in-out;
-  }
-  .teaser-widget:hover {
-    transform: translateY(-5px);
-  }
+        .feed-container {
+            display: grid;
 
-  .teaser-widget a {
-    text-decoration: none;
-    color: inherit;
-    display: block;
-  }
+            /* CSS-переменная для управления колонками */
+            grid-template-columns: repeat(var(--feed-columns, 1), 1fr);
+            gap: 20px;
+        }
 
-  .teaser-image {
-    width: 100%;
-    height: 180px;
-    object-fit: cover; /* Масштабирует изображение, сохраняя пропорции */
-    background-color: #eee; /* Фон для случая, если картинка не загрузится */
-  }
+        /* --- Стили Тизера (Карточка) --- */
 
-  .teaser-content {
-    padding: 15px;
-  }
+        .teaser-widget {
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            text-decoration: none;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+        }
 
-  .teaser-title {
-    font-size: 1.1rem;
-    font-weight: bold;
-    color: #333;
-    margin: 0 0 10px 0;
-    /* Ограничиваем заголовок 2 строками */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+        .teaser-widget:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+        }
 
-  .teaser-text {
-    font-size: 0.9rem;
-    color: #666;
-    /* Ограничиваем текст 3 строками */
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+        .teaser-image-wrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* Соотношение сторон 16:9 */
+            background-color: #f0f0f0;
+        }
 
-  /* Индикатор загрузки */
-  #loading-spinner {
-    display: none; /* По умолчанию скрыт */
-    width: 50px;
-    height: 50px;
-    border: 5px solid #f3f3f3;
-    border-top: 5px solid #3498db;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin: 30px auto;
-  }
+        .teaser-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
 
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
+        .teaser-content {
+            padding: 16px;
+            flex-grow: 1;
+        }
 
-</style>
+        .teaser-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            line-height: 1.4;
+            margin: 0 0 8px 0;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-height: 2.8em; /* 1.4 * 2 (для 2х строк) */
+        }
+
+        .teaser-text {
+            font-size: 0.9rem;
+            color: #555;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin: 0;
+        }
+
+        /* --- Заглушка для загрузки --- */
+        .loading-placeholder {
+            min-height: 250px;
+            background: #f9f9f9;
+            border-radius: 12px;
+            display: flex;
+            /* Исправлено: align-items */
+            align-items: center;
+            justify-content: center;
+            color: #ccc;
+        }
+    </style>
 {% endblock %}
 
+{#
+  Этот блок заменяет основной контент страницы.
+#}
 {% block content %}
-<main>
-  {% if category %}
-    <h1 style="text-align: center; padding-top: 20px;">Категория: {{ category }}</h1>
-  {% else %}
-    <h1 style="text-align: center; padding-top: 20px;">Главная страница</h1>
-  {% endif %}
+<main class="main-container">
 
-  <!-- Это контейнер, куда JS будет добавлять тизеры -->
-  <div id="teaser-feed" class="feed-container">
-    <!-- Тизеры будут вставлены сюда -->
-  </div>
+    {% if category %}
+        <h1>Категория: {{ category }}</h1>
+    {% else %}
+        <h1>Главная</h1>
+    {% endif %}
 
-  <!-- Индикатор загрузки, который появляется при подгрузке -->
-  <div id="loading-spinner"></div>
+    <!-- Это контейнер для нашей "бесконечной" ленты -->
+    <div id="teaser-feed" class="feed-container">
+        <!--
+          JavaScript будет заполнять этот блок
+          элементами <div class="teaser-widget">...</div>
+        -->
+    </div>
+
 </main>
 {% endblock %}
 
+{#
+  Этот блок вставляет JavaScript в конец <body>.
+#}
 {% block scripts %}
-{{ super() }}
-<!--
-  jQuery (jquery-3.7.1.min.js) уже загружен из layout.html
-  благодаря вызову {{ super() }} выше.
-  Удаляем дублирующую загрузку отсюда.
--->
+    {{ super() }} {# Загружает jQuery и fcm.js из layout.html #}
 
-<script>
-  $(document).ready(function() {
+    <script>
+        $(document).ready(function() {
 
-    // --- Глобальные переменные ---
-    let currentLine = 0; // Текущая "линия" виджетов (для пагинации)
-    let isLoading = false; // Флаг, чтобы не отправлять >1 запроса одновременно
-    let columns = 0; // Текущее кол-во колонок в сетке
+            // --- Глобальные переменные ---
+            const feed = $('#teaser-feed');
+            let currentPage = 0; // Отслеживаем текущую "страницу" (ряд) ленты
+            let isLoading = false; // Флаг, чтобы не загружать данные дважды
 
-    // Получаем код категории из шаблона Jinja2
-    // `tojson` безопасно обработает `None` или строку
-    const CATEGORY_CODE = {{ category | default(none) | tojson }};
+            const currentCategory = {{ category | tojson | safe }};
 
-    // --- Утилиты ---
+            // --- 1. Определение сетки ---
 
-    /**
-     * Функция "Debounce" (устранение дребезга).
-     * Гарантирует, что функция-обработчик (напр. handleResize)
-     * вызовется только один раз за N миллисекунд,
-     * а не 100 раз в секунду при изменении размера.
-     */
-    function debounce(func, wait) {
-      let timeout;
-      return function(...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), wait);
-      };
-    }
+            function getGridColumns() {
+                const width = window.innerWidth;
+                if (width > 1200) return 4;
+                if (width > 900) return 3;
+                if (width > 600) return 2;
+                return 1;
+            }
 
-    // --- Основная логика ---
+            function generateWidgetNames(pageIndex, columns) {
+                const widgets = {};
+                for (let i = 0; i < columns; i++) {
+                    const widgetName = `l${i.toString(16)}${pageIndex.toString(16).padStart(2, '0')}`;
+                    widgets[widgetName] = 1;
+                }
+                return widgets;
+            }
 
-    /**
-     * Определяет текущее количество колонок в CSS Grid.
-     * @returns {number} - Количество колонок.
-     */
-    function getGridColumns() {
-      const feedElement = document.getElementById('teaser-feed');
-      if (!feedElement) {
-          console.error("Critical error: #teaser-feed not found!");
-          return 0;
-      }
-      const style = window.getComputedStyle(feedElement);
-      // 'grid-template-columns' вернет что-то вроде "298px 298px 298px"
-      // Мы просто считаем количество блоков, разделенных пробелом.
-      const columnString = style.getPropertyValue('grid-template-columns');
-      return columnString.split(' ').length;
-    }
+            // --- 2. Запрос и Рендеринг Данных ---
 
-    /**
-     * Проверяет, изменилось ли количество колонок, и обновляет
-     * глобальную переменную.
-     * @returns {boolean} - true, если layout изменился.
-     */
-    function checkLayoutChange() {
-      const newColumns = getGridColumns();
-      if (newColumns > 0 && newColumns !== columns) {
-        console.log(`Layout changed: ${columns} -> ${newColumns} columns`);
-        columns = newColumns;
-        return true;
-      }
-      return false;
-    }
+            function placeholderImage(text) {
+                return `https://placehold.co/400x225/E8E8E8/999?text=${encodeURIComponent(text)}`;
+            }
 
-    /**
-     * Запрашивает и рендерит тизеры для N "линий",
-     * начиная с `startLine`.
-     * @param {number} linesToFetch - Количество линий для загрузки (напр., 2).
-     * @param {number} startLine - Номер линии, с которой начать.
-     */
-    function fetchTeasers(linesToFetch, startLine) {
-      if (isLoading) {
-          console.log("Request blocked: already loading.");
-          return;
-      }
-      isLoading = true;
-      $('#loading-spinner').show();
+            /**
+             * Рендерит тизеры в контейнер
+             * @param {object} widgetsData - Ответ от API (e.g. {"l00": [teaser], ...})
+             * @param {number} pageIndex - Индекс ряда, который мы рендерим
+             */
+            function renderTeasers(widgetsData, pageIndex) {
+                const columns = getGridColumns();
 
-      // 1. Генерируем карту виджетов в соответствии с вашим ТЗ
-      const widgets = {};
-      if (columns === 0) {
-        console.warn("Columns not calculated, defaulting to 1");
-        columns = 1; // Устанавливаем 1, если расчет не удался
-      }
+                // Мы должны рендерить в правильном порядке (l0x, l1x, l2x, l3x)
+                for (let i = 0; i < columns; i++) {
+                    // Используем `pageIndex`, который мы *ожидаем* отрендерить
+                    const widgetName = `l${i.toString(16)}${pageIndex.toString(16).padStart(2, '0')}`;
 
-      for (let r = 0; r < linesToFetch; r++) {
-        const row_idx = startLine + r;
-        for (let c = 0; c < columns; c++) {
-          // Имя виджета: l[hex-колонка][hex-строка]
-          const widgetName = `l${c.toString(16)}${row_idx.toString(16).padStart(2, '0')}`;
-          // Запрашиваем 1 тизер на 1 слот
-          widgets[widgetName] = 1;
-        }
-      }
+                    if (widgetsData[widgetName] && widgetsData[widgetName].length > 0) {
+                        const teaser = widgetsData[widgetName][0];
+                        const imageUrl = teaser.image ? teaser.image : placeholderImage(widgetName);
 
-      if (Object.keys(widgets).length === 0) {
-          console.log("No widgets to fetch.");
-          isLoading = false;
-          $('#loading-spinner').hide();
-          return;
-      }
+                        const teaserHtml = `
+                            <a class="teaser-widget" id="${widgetName}" href="${teaser.url}" target="_blank">
+                                <div class="teaser-image-wrapper">
+                                    <img class="teaser-image"
+                                         src="${imageUrl}"
+                                         alt="${teaser.title || 'Teaser'}"
+                                         onerror="this.src='${placeholderImage('Error')}'">
+                                </div>
+                                <div class="teaser-content">
+                                    <h3 class="teaser-title">${teaser.title || 'Заголовок тизера'}</h3>
+                                    <p class="teaser-text">${teaser.text || 'Описание тизера...'}</p>
+                                </div>
+                            </a>
+                        `;
+                        feed.append(teaserHtml);
+                    } else {
+                         const placeholderHtml = `
+                            <div class="teaser-widget loading-placeholder" id="${widgetName}">
+                                <span>(empty: ${widgetName})</span>
+                            </div>
+                        `;
+                        feed.append(placeholderHtml);
+                    }
+                }
+            }
 
-      console.log("Fetching widgets:", widgets);
+            // --- ИЗМЕНЕНИЕ ЛОГИКИ ЗАГРУЗКИ ---
+            /**
+             * Проверяет, заполнена ли страница,
+             * и если нет, загружает еще.
+             */
+            function checkAndLoadMore() {
+                if (isLoading) return;
 
-      // 2. Собираем полный payload для API /etc
-      const payload = {
-        uid: "user-id-placeholder-12345", // TODO: Заменить на реальный UID
-        ip: "127.0.0.1", // TODO: Это поле должен заполнять бэкенд
-        ua: navigator.userAgent,
-        url: window.location.href,
-        loc: "ru",
-        w: window.innerWidth,
-        h: window.innerHeight,
-        d: window.devicePixelRatio || 1,
-        widgets: widgets
-      };
+                // Используем document.documentElement.scrollHeight для
+                // получения полной высоты контента
+                const scrollHeight = document.documentElement.scrollHeight;
+                const windowHeight = $(window).height();
 
-      // 3. Отправляем AJAX-запрос
-      $.ajax({
-        type: 'POST',
-        url: '/etc',
-        data: JSON.stringify(payload),
-        contentType: 'application/json',
-        dataType: 'json',
-        success: function(response) {
-          console.log("Received response:", response);
-          if (response.widgets) {
-            renderTeasers(response.widgets);
-          } else {
-            console.log("Response contained no 'widgets' key.");
-          }
-        },
-        error: function(xhr, status, error) {
-          console.error("Failed to fetch teasers:", status, error);
-          // Можно показать сообщение об ошибке
-        },
-        complete: function() {
-          isLoading = false;
-          $('#loading-spinner').hide();
-        }
-      });
-    }
+                // Если нет полосы прокрутки (контент короче окна)
+                if (scrollHeight <= windowHeight) {
+                    console.log("Контент не заполняет экран, загружаем еще...", currentPage);
+                    fetchTeasers(currentPage);
+                }
+            }
 
-    /**
-     * Рендерит тизеры, полученные от API.
-     * @param {Object} widgets - Объект {widgetName: [teaserArray]}
-     */
-    function renderTeasers(widgets) {
-      const $feed = $('#teaser-feed');
 
-      // Сортируем ключи, чтобы рендерить в правильном порядке
-      // (l000, l100, l200, l001, l101, l201...)
-      // Сортируем по строке (yy), затем по колонке (x)
-      const sortedKeys = Object.keys(widgets).sort((a, b) => {
-          // Извлекаем 'l', 'x', 'yy'
-          const rowA = a.substring(2); // '00', '01'
-          const colA = a.substring(1, 2); // '0', '1'
-          const rowB = b.substring(2);
-          const colB = b.substring(1, 2);
+            /**
+             * Основная функция запроса тизеров
+             * @param {number} pageIndex - Индекс ряда для загрузки
+             */
+            function fetchTeasers(pageIndex) {
+                if (isLoading) return;
+                isLoading = true;
 
-          if (rowA !== rowB) return parseInt(rowA, 16) - parseInt(rowB, 16);
-          return parseInt(colA, 16) - parseInt(colB, 16);
-      });
+                console.log(`Запрос ряда ${pageIndex}`);
 
-      console.log("Rendering widgets in order:", sortedKeys);
+                const columns = getGridColumns();
+                const widgetsToLoad = generateWidgetNames(pageIndex, columns);
 
-      let renderedCount = 0;
-      for (const widgetName of sortedKeys) {
-        const teasers = widgets[widgetName];
-        if (teasers && teasers.length > 0) {
-          // Мы просили 1 тизер (quantity=1), поэтому берем первый [0]
-          const teaser = teasers[0];
+                // Добавляем плейсхолдеры с уникальными ID
+                const placeholderIds = [];
+                for (let i = 0; i < columns; i++) {
+                    const id = `placeholder-${pageIndex}-${i}`;
+                    placeholderIds.push(id);
+                    feed.append(`<div class="loading-placeholder" id="${id}">...</div>`);
+                }
 
-          // Создаем HTML-разметку (убедитесь, что бэкенд отдает image и url)
-          const imageUrl = teaser.image || 'https://placehold.co/400x200/eee/ccc?text=No+Image';
-          // ИСПОЛЬЗУЕМ teaser.url (из ArticlePreviewSchema)
-          const teaserUrl = teaser.url || '#';
+                const requestBody = {
+                    uid: "user-123", // Заглушка
+                    ip: "127.0.0.1", // Заглушка
+                    ua: navigator.userAgent,
+                    url: window.location.href,
+                    loc: "ru",
+                    w: window.innerWidth,
+                    h: window.innerHeight,
+                    widgets: widgetsToLoad
+                    // В будущем тут будет и 'category': currentCategory
+                };
 
-          const teaserHtml = `
-            <div class="teaser-widget" data-widget-id="${widgetName}">
-              <a href="${teaserUrl}">
-                <img src="${imageUrl}" alt="${teaser.title || ''}" class="teaser-image"
-                     onerror="this.src='https://placehold.co/400x200/eee/ccc?text=Error';">
-                <div class="teaser-content">
-                  <h3 class="teaser-title">${teaser.title || 'Заголовок отсутствует'}</h3>
-                  <p class="teaser-text">${teaser.text || 'Описание отсутствует'}</p>
-                </div>
-              </a>
-            </div>
-          `;
-          $feed.append(teaserHtml);
-          renderedCount++;
-        }
-      }
-      console.log(`Rendered ${renderedCount} teasers.`);
-    }
+                $.ajax({
+                    url: "/etc",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify(requestBody),
+                    success: function(response) {
+                        // Убираем *только* те плейсхолдеры,
+                        // которые мы добавили для *этого* запроса
+                        placeholderIds.forEach(id => $(`#${id}`).remove());
 
-    /**
-     * Сбрасывает ленту (очищает HTML и счетчики).
-     */
-    function resetFeed() {
-      console.log("Resetting feed...");
-      $('#teaser-feed').empty();
-      currentLine = 0;
-      isLoading = false;
-      // Прерываем любые текущие AJAX-запросы, если это необходимо
-      // (хотя `isLoading` флаг должен помочь)
-    }
+                        if (response.widgets) {
+                            // Передаем pageIndex в renderTeasers,
+                            // чтобы он знал, какие имена виджетов
+                            // ожидать
+                            renderTeasers(response.widgets, pageIndex);
+                            currentPage = pageIndex + 1; // Увеличиваем номер "страницы"
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("Ошибка при загрузке тизеров:", error);
+                        placeholderIds.forEach(id => $(`#${id}`).remove());
+                    },
+                    complete: function() {
+                        isLoading = false;
 
-    /**
-     * Загружает начальные 2 линии.
-     */
-    function loadInitialTeasers() {
-      console.log("Loading initial teasers...");
-      currentLine = 0;
-      fetchTeasers(2, 0); // Загружаем первые 2 линии
-    }
+                        // --- ИЗМЕНЕНИЕ ---
+                        // После *каждой* загрузки проверяем,
+                        // нужно ли загрузить еще (если экран не полон).
+                        checkAndLoadMore();
+                    }
+                });
+            }
 
-    /**
-     * Загружает следующие 2 линии (для бесконечной прокрутки).
-     */
-    function loadMoreTeasers() {
-      console.log("Loading more teasers...");
-      // Увеличиваем счетчик линий ПОСЛЕ запроса, чтобы знать, с какой линии начать
-      const lineToStart = currentLine + 2;
-      fetchTeasers(2, lineToStart); // Загружаем 2 следующие линии
-      currentLine = lineToStart; // Обновляем счетчик
-    }
+            // --- 3. Инициализация и Обработчики ---
 
-    /**
-     * Обработчик "бесконечной" прокрутки.
-     */
-    function handleScroll() {
-      // Не загружать, если уже идет загрузка
-      if (isLoading) return;
+            /**
+             * Обновляет CSS-переменную для сетки и сбрасывает ленту
+             */
+            function updateGrid() {
+                const cols = getGridColumns();
+                console.log(`Обновление сетки: ${cols} колонок (ширина ${window.innerWidth}px)`);
+                document.documentElement.style.setProperty('--feed-columns', cols.toString());
 
-      // Загружаем за 500px до конца страницы
-      if ($(window).scrollTop() + $(window).height() > $(document).height() - 500) {
-        loadMoreTeasers();
-      }
-    }
+                feed.empty();
+                currentPage = 0;
 
-    /**
-     * Обработчик изменения размера окна.
-     */
-    function handleResize() {
-      console.log("Resize event detected");
-      if (checkLayoutChange()) {
-        // Если количество колонок изменилось,
-        // перезагружаем всю ленту с нуля.
-        resetFeed();
-        loadInitialTeasers();
-      }
-    }
+                // --- ИЗМЕНЕНИЕ ---
+                // Загружаем *только* первый ряд.
+                // Остальное сделает checkAndLoadMore()
+                // или скролл, если полоса прокрутки появится сразу.
+                fetchTeasers(0);
+            }
 
-    // --- Инициализация ---
-    // Ожидаем, пока CSS Grid отрисуется,
-    // затем запускаем логику.
-    setTimeout(() => {
-        console.log("DOM ready, initializing...");
-        if (checkLayoutChange()) { // Первоначальный расчет колонок
-            loadInitialTeasers(); // Загрузка первого контента
-        } else {
-            // Если checkLayoutChange() вернул false (напр., 0 колонок)
-            // пробуем еще раз
-            setTimeout(() => {
-                 console.log("Retrying layout check...");
-                 if(checkLayoutChange()) {
-                    loadInitialTeasers();
-                 } else {
-                     console.error("Could not determine grid columns. Defaulting to 1.");
-                     columns = 1;
-                     loadInitialTeasers();
-                 }
-            }, 100); // Даем еще 100ms на рендер
-        }
+            // "Бесконечная" прокрутка
+            $(window).on('scroll', function() {
+                const scrollHeight = document.documentElement.scrollHeight;
+                const scrollTop = $(window).scrollTop();
+                const windowHeight = $(window).height();
 
-        // Навешиваем обработчики
-        $(window).on('scroll', debounce(handleScroll, 100)); // debounce для скролла
-        $(window).on('resize', debounce(handleResize, 250));
-    }, 10); // Небольшая задержка, чтобы grid успел отрисоваться
+                // Загружаем за 500px до конца
+                if (scrollTop + windowHeight >= scrollHeight - 500) {
+                    if (!isLoading) {
+                        console.log("Загрузка (скролл) следующего ряда...", currentPage);
+                        fetchTeasers(currentPage);
+                    }
+                }
+            });
 
-  });
-</script>
+            // Обработчик изменения размера окна (с задержкой)
+            let resizeTimer;
+            $(window).on('resize', function() {
+                clearTimeout(resizeTimer);
+                // Перестраиваем всю сетку
+                resizeTimer = setTimeout(updateGrid, 300);
+            });
+
+            // --- Первый запуск ---
+            updateGrid(); // Устанавливаем сетку и загружаем первый ряд
+
+        });
+    </script>
 {% endblock %}
