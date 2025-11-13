@@ -17,12 +17,15 @@
 #}
 {% block head %}
     {{ super() }}
+    <!--
+      Добавлен ?v=2 для "сброса кэша" браузера.
+      Это заставит браузер загрузить новый CSS с @media-запросами.
+    -->
     <link rel="stylesheet" href="/static/css/teaser_feed.css?v=2">
 {% endblock %}
 
 {#
   Этот блок заменяет основной контент страницы.
-  Разметка осталась той же.
 #}
 {% block content %}
     <main class="main-container">
