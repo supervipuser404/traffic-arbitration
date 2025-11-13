@@ -2,6 +2,25 @@
 // и что 'window.currentCategory' (e.g., "sport" or null)
 // была определена в inline-скрипте в HTML.
 
+/**
+ * ДОБАВЛЕНО: Функция "Троттлинга"
+ * Ограничивает вызов функции `func` не чаще, чем один раз
+ * в `limit` миллисекунд.
+ */
+function throttle(func, limit) {
+    let inThrottle;
+    return function () {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+
 $(document).ready(function () {
 
     // --- Глобальные переменные ---
@@ -80,6 +99,8 @@ $(document).ready(function () {
     }
 
     function checkAndLoadMore() {
+        // ДОБАВЛЕНА ПРОВЕРКА: Не делать ничего,
+        // если уже идет загрузка
         if (isLoading) return;
 
         const scrollHeight = document.documentElement.scrollHeight;
@@ -157,19 +178,26 @@ $(document).ready(function () {
         fetchTeasers(0);
     }
 
-    $(window).on('scroll', function () {
+    /**
+     * ИЗМЕНЕНО: Обработчик `scroll` теперь обернут в `throttle`
+     * Он будет срабатывать не чаще, чем раз в 200мс.
+     */
+    $(window).on('scroll', throttle(function () {
         const scrollHeight = document.documentElement.scrollHeight;
         const scrollTop = $(window).scrollTop();
         const windowHeight = $(window).height();
 
+        // Загружаем за 500px до конца
         if (scrollTop + windowHeight >= scrollHeight - 500) {
             if (!isLoading) {
                 console.log("Загрузка (скролл) следующего ряда...", currentPage);
                 fetchTeasers(currentPage);
             }
         }
-    });
+    }, 200)); // 200мс - задержка троттлинга
 
+    // Обработчик `resize` уже использует "debounce" (таймаут),
+    // что корректно.
     let resizeTimer;
     $(window).on('resize', function () {
         clearTimeout(resizeTimer);
