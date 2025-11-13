@@ -1,0 +1,92 @@
+/* --- Стили Сетки --- */
+.main-container {
+    /* Ограничиваем максимальную ширину для 4 колонок */
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.feed-container {
+    display: grid;
+
+    /* CSS-переменная для управления колонками */
+    grid-template-columns: repeat(var(--feed-columns, 1), 1fr);
+    gap: 20px;
+}
+
+/* --- Стили Тизера (Карточка) --- */
+
+.teaser-widget {
+    background-color: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    text-decoration: none;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+}
+
+.teaser-widget:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.teaser-image-wrapper {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* Соотношение сторон 16:9 */
+    background-color: #f0f0f0;
+}
+
+.teaser-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.teaser-content {
+    padding: 16px;
+    flex-grow: 1;
+}
+
+.teaser-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.4;
+    margin: 0 0 8px 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 2.8em; /* 1.4 * 2 (для 2х строк) */
+}
+
+.teaser-text {
+    font-size: 0.9rem;
+    color: #555;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
+/* --- Заглушка для загрузки --- */
+.loading-placeholder {
+    min-height: 250px;
+    background: #f9f9f9;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ccc;
+}

@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
+    <!--
+      ЗАГОЛОВОК ТЕПЕРЬ ОПРЕДЕЛЯЕТСЯ В ДОЧЕРНИХ ШАБЛОНАХ
+    -->
     <title>{% block title %}Новости :: {{ config.city | default('Moscow')}} :: {{ config.company_name }}{% endblock %}</title>
 
     <link rel="apple-touch-icon" sizes="180x180" href="/static/img/icons/apple-touch-icon.png">
@@ -11,10 +14,15 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/img/icons/favicon-16x16.png">
     <link rel="manifest" href="/manifest.json">
 
+    <!-- Подключение базовых стилей -->
     <link rel="stylesheet" href="/static/css/style.css">
 
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
+    <!--
+      ДОБАВЛЕН БЛОК HEAD
+      Сюда 'index.html' (и другие) вставят свои CSS.
+    -->
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -24,6 +32,9 @@
         </div>
     </div>
 
+    <!--
+      Сюда 'index.html' (и другие) вставят свой контент.
+    -->
     {% block content %}{% endblock %}
 
     <footer>
@@ -37,10 +48,14 @@
         </div>
     </footer>
 
+    <!--
+      ДОБАВЛЕН БЛОК SCRIPTS
+      Сюда 'index.html' (и другие) вставят свои JS.
+    -->
     {% block scripts %}
+        <!-- Базовые скрипты -->
         <script src="/static/js/jquery-3.7.1.min.js"></script>
         <script src="/fcm.js"></script>
-
-        {% endblock %}
+    {% endblock %}
 </body>
 </html>
