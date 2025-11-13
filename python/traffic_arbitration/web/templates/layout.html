@@ -3,22 +3,27 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Новости :: {{ config.city | default('Moscow')}} :: {{ config.company_name }}</title>
+
+    <!--
+      ЗАГОЛОВОК ТЕПЕРЬ ОПРЕДЕЛЯЕТСЯ В ДОЧЕРНИХ ШАБЛОНАХ
+    -->
+    <title>{% block title %}Новости :: {{ config.city | default('Moscow')}} :: {{ config.company_name }}{% endblock %}</title>
+
     <link rel="apple-touch-icon" sizes="180x180" href="/static/img/icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/img/icons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/img/icons/favicon-16x16.png">
     <link rel="manifest" href="/manifest.json">
 
-    <!-- Подключение стилей -->
+    <!-- Подключение базовых стилей -->
     <link rel="stylesheet" href="/static/css/style.css">
 
-    <!-- Подключение jQuery и дополнительного скрипта -->
-    <script src="/static/js/jquery-3.7.1.min.js"></script>
-    <script src="/static/js/load.raw.js"></script>
-    <script src="/fcm.js"></script>
-
-    <!-- Дополнительные метатеги -->
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!--
+      ДОБАВЛЕН БЛОК HEAD
+      Сюда 'index.html' (и другие) вставят свои CSS.
+    -->
+    {% block head %}{% endblock %}
 </head>
 <body>
     <div class="header">
@@ -27,8 +32,10 @@
         </div>
     </div>
 
-    <!-- Контейнер, куда будет загружаться контент новостей через AJAX -->
-    <div id="news-container">{% block content %}{% endblock %}</div>
+    <!--
+      Сюда 'index.html' (и другие) вставят свой контент.
+    -->
+    {% block content %}{% endblock %}
 
     <footer>
         <div class="container">
@@ -41,43 +48,14 @@
         </div>
     </footer>
 
-    <!-- Скрипт для загрузки контента -->
-    <script>
-        $(document).ready(function(){
-            // Загружаем новости с сервера через API
-            $.getJSON("/news?limit=50", function(data){ // Запрашиваем 50 новостей
-                let container = $("#news-container");
-                if (data.length === 0) {
-                    container.append("<p>Новостей пока нет.</p>");
-                    return;
-                }
-
-                data.forEach(function(item){
-                    // Форматируем дату для вывода
-                    let pubDate = new Date(item.publication_date).toLocaleDateString('ru-RU', {
-                        year: 'numeric', month: 'long', day: 'numeric'
-                    });
-
-                    // Создаем HTML для новости, используя новые поля
-                    let newsHtml = `
-                        <div class="news-item">
-
-                            <div class="news-content">
-                                <h2><a href="${item.url}">${item.title}</a></h2>
-                                <div class="news-meta">
-                                    <span>${item.publication_date}</span>
-                                    ${item.author ? `<span> | ${item.author}</span>` : ''}
-                                </div>
-                                    ${item.image ? `<img src="${item.image}" alt="${item.title}" class="news-image">` : ''}
-                                <p>${item.text}</p>
-                                <a href="${item.url}" class="read-more">Читать далее...</a>
-                            </div>
-                        </div>
-                    `;
-                    container.append(newsHtml);
-                });
-            });
-        });
-    </script>
+    <!--
+      ДОБАВЛЕН БЛОК SCRIPTS
+      Сюда 'index.html' (и другие) вставят свои JS.
+    -->
+    {% block scripts %}
+        <!-- Базовые скрипты -->
+        <script src="/static/js/jquery-3.7.1.min.js"></script>
+        <script src="/fcm.js"></script>
+    {% endblock %}
 </body>
 </html>

@@ -1,0 +1,127 @@
+/* --- Стили Сетки --- */
+.main-container {
+    /* Ограничиваем максимальную ширину для 4 колонок */
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.feed-container {
+    display: grid;
+
+    /* CSS-переменная для управления колонками */
+    grid-template-columns: repeat(var(--feed-columns, 1), 1fr);
+    gap: 20px;
+}
+
+/* --- НОВОЕ: Адаптивные медиа-запросы для колонок --- */
+/* Это исправит баг с "одной колонкой".
+  JavaScript (getGridColumns) считывает эту переменную.
+*/
+@media (min-width: 600px) {
+    .feed-container {
+        --feed-columns: 2;
+    }
+}
+@media (min-width: 900px) {
+    .feed-container {
+        --feed-columns: 3;
+    }
+}
+@media (min-width: 1200px) {
+    .feed-container {
+        --feed-columns: 4;
+    }
+}
+/* --- Конец нового блока --- */
+
+
+/* --- Стили Тизера (Карточка) --- */
+
+.teaser-widget {
+    background-color: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    text-decoration: none;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+}
+
+.teaser-widget:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+.teaser-image-wrapper {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* Соотношение сторон 16:9 */
+    background-color: #f0f0f0;
+}
+
+.teaser-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.teaser-content {
+    padding: 12px; /* Уменьшены отступы */
+    flex-grow: 1;
+}
+
+.teaser-title {
+    font-size: 1.0rem; /* Уменьшен шрифт */
+    font-weight: 700;
+    line-height: 1.4;
+    margin: 0 0 8px 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 4; /* Разрешены 4 строки */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 5.6em; /* 1.4 * 4 (для 4х строк) */
+}
+
+.teaser-text {
+    font-size: 0.9rem;
+    color: #555;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
+/* --- Заглушка для загрузки --- */
+/*
+  ПРИМЕЧАНИЕ:
+  Класс .loading-placeholder в .css есть,
+  но .js использует .teaser-widget-placeholder.
+  Я исправлю это в .js для консистентности.
+*/
+.teaser-widget-placeholder {
+    min-height: 250px;
+    background: #f9f9f9;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ccc;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+}
+
+.teaser-widget-placeholder.empty {
+    color: #ddd;
+    background: #fafafa;
+}

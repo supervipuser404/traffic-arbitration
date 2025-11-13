@@ -104,19 +104,31 @@ class TeaserRequestSchema(BaseModel):
     """
     Схема для валидации входящего запроса на /etc.
     """
+    # TODO: ip -> pydantic.IPvAnyAddress; url -> pydantic.HttpUrl
     uid: str
-    ip: str  # Для более строгой валидации можно использовать pydantic.IPvAnyAddress
+    ip: str
     ua: str
-    url: str  # Для более строгой валидации можно использовать pydantic.HttpUrl
+    url: str
     loc: str = "ru"
     w: int
     h: int
     d: Optional[float] = None
     widgets: Dict[str, int]  # { "widget_name": quantity }
 
+    # --- НОВЫЕ ПОЛЯ ---
+    # ID, которые *уже показаны* на *этой странице* (краткосрочная память)
+    seen_ids_page: List[int] = []
+    # ID из cookie (долгосрочная память)
+    seen_ids_long_term: List[int] = []
+
 
 class TeaserResponseSchema(BaseModel):
     """
     Схема для ответа эндпоинта /etc.
     """
-    widgets: Dict[str, List[ArticlePreviewSchema]]
+    widgets: Dict[str, ArticlePreviewSchema]
+
+    # --- НОВОЕ ПОЛЕ ---
+    # Список ID, которые сервер *только что выдал*
+    # и которые клиент должен добавить в долгосрочное хранилище (cookie)
+    newly_served_ids: List[int] = []

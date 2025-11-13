@@ -1,1 +1,70 @@
 {% extends "layout.html" %}
+
+{#
+  Этот блок определяет заголовок страницы.
+#}
+{% block title %}
+    {% if category %}
+        Категория: {{ category }}
+    {% else %}
+        Главная страница
+    {% endif %}
+    :: {{ config.company_name }}
+{% endblock %}
+
+{#
+  Этот блок вставляет CSS-стили.
+#}
+{% block head %}
+    {{ super() }}
+    <!--
+      Добавлен ?v=2 для "сброса кэша" браузера.
+      Это заставит браузер загрузить новый CSS с @media-запросами.
+    -->
+    <link rel="stylesheet" href="/static/css/teaser_feed.css?v=2">
+{% endblock %}
+
+{#
+  Этот блок заменяет основной контент страницы.
+#}
+{% block content %}
+    <main class="main-container">
+
+        {% if category %}
+            <h1>Категория: {{ category }}</h1>
+        {% else %}
+            <h1>Главная</h1>
+        {% endif %}
+
+        <!-- Это контейнер для нашей "бесконечной" ленты -->
+        <div id="teaser-feed" class="feed-container">
+            <!--
+              JavaScript будет заполнять этот блок
+              элементами <div class="teaser-widget">...</div>
+            -->
+        </div>
+
+    </main>
+{% endblock %}
+
+{#
+  Этот блок вставляет JavaScript в конец <body>.
+  Мы убрали inline-скрипт и заменили его ссылками.
+#}
+{% block scripts %}
+    {{ super() }} {# Загружает jQuery и fcm.js из layout.html #}
+
+    <!--
+      1. Определяем динамические переменные (из Jinja2),
+         которые нужны внешнему скрипту.
+    -->
+    <script>
+        // Передаем 'category' из Jinja2 в JavaScript
+        window.currentCategory = {{ category | tojson | safe }};
+    </script>
+
+    <!--
+      2. Подключаем основной файл логики ленты
+    -->
+    <script src="/static/js/teaser_feed.js"></script>
+{% endblock %}

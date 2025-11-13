@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from traffic_arbitration.models import Article, ArticlePreview as ArticlePreview
 from traffic_arbitration.db.queries import get_article_by_slug_and_category
 from .utils import insert_teasers
 from .cache import news_cache
+# Обновляем импорты сервисов
 from .services import NewsRanker, TeaserService
 from .schemas import (
     ArticlePreviewSchema,
@@ -88,9 +89,26 @@ async def lifespan(app: FastAPI):
         f"@{host}:{port}/{db_config.get('dbname')}"
     )
 
-    engine = create_engine(sqlalchemy_url)
+    # Добавлен pool_pre_ping=True
+    # Это предотвратит зависание при "мертвых" соединениях в пуле
+    # (например, если SSH-туннель "отвалился" по таймауту).
+    engine = create_engine(sqlalchemy_url, pool_pre_ping=True)
+
     app_state.db_engine = engine
     app_state.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    # 3. Внедряем session_maker в кэш и запускаем *первое* обновление
+    print("INFO:     Внедрение сессии в кэш...")
+    news_cache.set_session_maker(app_state.SessionLocal)
+
+    print("INFO:     Запуск *первого* (синхронного) обновления кэша...")
+    try:
+        news_cache.force_update()
+        print("INFO:     Кэш успешно обновлен.")
+    except Exception as e:
+        print(f"ERROR:    Не удалось выполнить первое обновление кэша: {e}")
+        # В зависимости от логики, здесь можно либо упасть,
+        # либо продолжить с пустым кэшем.
 
     # Приложение готово к работе
     yield
@@ -113,6 +131,7 @@ app = FastAPI(lifespan=lifespan)
 news_ranker = NewsRanker(cache=news_cache)
 # Создаем сервис тизеров, передавая ему ранжировщик как зависимость
 teaser_service = TeaserService(news_ranker=news_ranker)
+
 
 # Подключаем статику: здесь файлы CSS, JS, изображения и т.п.
 app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
@@ -139,8 +158,19 @@ def get_db():
 
 # Основной маршрут для главной страницы
 @app.get("/", response_class=HTMLResponse)
-async def read_index(request: Request):
-    return templates.TemplateResponse("index.html", template_context(request))
+async def read_index(request: Request, category: Optional[str] = None):
+    # 'category' здесь None
+    context = template_context(request)
+    context.update({"category": None})
+    return templates.TemplateResponse("index.html", context)
+
+
+@app.get("/cat/{category}", response_class=HTMLResponse)
+async def read_category(request: Request, category: str):
+    # 'category' здесь имеет значение
+    context = template_context(request)
+    context.update({"category": category})
+    return templates.TemplateResponse("index.html", context)
 
 
 @app.get("/fcm.js")
@@ -195,39 +225,30 @@ async def get_news(
     return news_previews_db
 
 
-# --- ОБНОВЛЕННЫЙ ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
-    API-эндпоинт для запроса тизеров (новостных превью) для виджетов.
+    API-эндпоинт для запроса тизеров (новостных превью) для виджетов
+    с учетом дедупликации.
 
     Принимает (в теле запроса):
-    - uid: Идентификатор пользователя
-    - ip: IP-адрес
-    - ua: User-Agent
-    - url: URL страницы
-    - loc: Локаль (по умолч. "ru")
-    - w: Ширина
-    - h: Высота
-    - d: Плотность (опционально)
-    - widgets: Словарь {widget_name: quantity}
+    - TeaserRequestSchema (uid, ip, ua, widgets, ...)
+    - seen_ids_page: ID, уже показанные на этой странице
+    - seen_ids_long_term: ID из cookie (долгосрочная память)
 
-    Возвращает:
-    - Словарь {widgets: {widget_name: [список ArticlePreviewSchema]}}
+    Возвращает (TeaserResponseSchema):
+    - widgets: Словарь {widget_name: ArticlePreviewSchema}
+    - newly_served_ids: Список ID, которые клиент должен добавить в cookie
     """
-    # На данном этапе данные uid, ip, ua и т.д. используются только для
-    # валидации, но не для логики. В будущем они понадобятся для ML.
     # Вся логика инкапсулирована в TeaserService.
-    # В будущем мы будем расширять TeaserService, а не этот эндпоинт.
-
-    # Передаем только те данные, которые сервису нужны *сейчас*
-    response_widgets = teaser_service.get_teasers_for_widgets(
-        widgets=request_data.widgets
+    # Передаем *весь* объект запроса в сервис.
+    response_data = teaser_service.get_teasers_for_widgets(
+        request_data=request_data
     )
 
-    # FastAPI/Pydantic автоматически преобразует List[ArticlePreview] (модель)
-    # в List[ArticlePreviewSchema] (схему) для JSON-ответа.
-    return {"widgets": response_widgets}
+    # Сервис уже возвращает словарь,
+    # соответствующий TeaserResponseSchema ({"widgets": ..., "newly_served_ids": ...})
+    return response_data
 
 
 @app.get("/{category}/{article_slug}", response_class=HTMLResponse)
@@ -269,4 +290,7 @@ def read_article_full(request: Request, category: str, article_slug: str, db: Se
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", reload=True)
+    # Обратите внимание: reload=True может вызывать
+    # многократный запуск lifespan.
+    # Для production используйте gunicorn (как у вас и настроено).
+    uvicorn.run("traffic_arbitration.web.main:app", reload=True, host="0.0.0.0", port=8000)
