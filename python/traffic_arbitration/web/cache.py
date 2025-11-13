@@ -12,13 +12,6 @@ from traffic_arbitration.models import (
 logger = logging.getLogger(__name__)
 
 
-# --- ИЗМЕНЕНИЕ: Модель данных для внутреннего кэша ---
-# Мы больше не можем хранить `ArticlePreview` (SQLAlchemy model)
-# напрямую, так как она привязана к сессии, которая ее создала.
-# Вместо этого мы будем хранить "чистые" Pydantic-подобные объекты
-# или просто словари. Но для простоты пока оставим как есть,
-# но будем помнить, что сессию нужно закрывать.
-
 class NewsCache:
     """
     Потокобезопасный кэш для хранения превью новостей.
@@ -26,13 +19,16 @@ class NewsCache:
 
     def __init__(self, ttl_seconds: int = 300):
         self.ttl = ttl_seconds
-        self.previews: List[ArticlePreview] = []
-        self.last_updated: float = 0
 
-        # --- ИЗМЕНЕНИЕ ---
+        # --- ИЗМЕНЕНИЕ: Тип данных в кэше ---
+        # Мы снова можем безопасно хранить List[ArticlePreview],
+        # потому что теперь мы будем "отсоединять" их от сессии.
+        self.previews: List[ArticlePreview] = []
+        # --- Конец изменения ---
+
+        self.last_updated: float = 0
         self.update_lock = threading.Lock()
         self.session_maker: sessionmaker | None = None
-        # --- Конец изменения ---
 
         logger.info(f"NewsCache инициализирован с TTL = {self.ttl} сек.")
 
@@ -48,11 +44,9 @@ class NewsCache:
         Основной метод для получения превью из кэша.
         Запускает обновление в фоне, если кэш устарел.
         """
-        # --- ИЗМЕНЕНИЕ: Логика перенесена сюда ---
         self._update_if_needed()
         # *Немедленно* возвращаем то, что есть в кэше
         return self.previews
-        # --- Конец изменения ---
 
     def _update_cache_from_db(self):
         """
@@ -65,8 +59,6 @@ class NewsCache:
 
         logger.info("Кэш устарел. Обновление из базы данных...")
 
-        # `pool_pre_ping=True` в `main.py` должен предотвратить
-        # зависание здесь при получении сессии.
         with self.session_maker() as db_session:
             # Запрос для получения всех активных превью и
             # связанных данных (дата публикации статьи, категория)
@@ -75,7 +67,7 @@ class NewsCache:
                     ArticlePreview.id,
                     ArticlePreview.article_id,
                     ArticlePreview.title,
-                    ArticlePreview.text,  # --- ИЗМЕНЕНИЕ: Убран .label("excerpt") ---
+                    ArticlePreview.text,
                     ArticlePreview.image,
                     ArticlePreview.is_active,
                     ArticlePreview.created_at,
@@ -93,12 +85,6 @@ class NewsCache:
             all_previews_data = db_session.execute(stmt).mappings().all()
 
             new_previews = []
-
-            # --- ИЗМЕНЕНИЕ: Правильная обработка данных ---
-            # Мы не можем просто передать **kwargs в модель SQLAlchemy,
-            # если в kwargs есть "лишние" поля (publication_date, category).
-
-            # Определяем поля, которые принадлежат модели ArticlePreview
             model_keys = ArticlePreview.__table__.columns.keys()
 
             for preview_data_row in all_previews_data:
@@ -123,7 +109,6 @@ class NewsCache:
                     preview_obj = ArticlePreview(**model_data)
 
                     # 4. "Прикрепляем" дополнительные данные к самому объекту
-                    #    (они не сохранятся в БД, но будут в кэше)
                     preview_obj.publication_date = extra_data["publication_date"]
                     preview_obj.category = extra_data["category"]
 
@@ -131,12 +116,21 @@ class NewsCache:
 
                 except TypeError as e:
                     logger.error(f"Ошибка при создании ArticlePreview: {e}. Данные: {model_data}")
+
+            # --- ИЗМЕНЕНИЕ: "Отсоединяем" объекты от сессии ---
+            # Это ключевой шаг. Объекты становятся "Detached"
+            # и могут безопасно храниться в кэше.
+            for obj in new_previews:
+                db_session.expunge(obj)
             # --- Конец изменения ---
 
             # Атомарно заменяем старые данные новыми
             self.previews = new_previews
             self.last_updated = time.time()
             logger.info(f"Кэш успешно обновлен. Загружено {len(self.previews)} превью.")
+
+        # Сессия (db_session) здесь закрывается, но объекты в
+        # self.previews теперь "отсоединены" и безопасны.
 
     def force_update(self):
         """
@@ -147,27 +141,21 @@ class NewsCache:
         with self.update_lock:
             self._update_cache_from_db()
 
-    # --- ИЗМЕНЕНИЕ: Новая фоновая задача ---
     def _run_update_in_background(self):
         """
         Обертка для запуска `_update_cache_from_db` в потоке.
         Обеспечивает, что только один поток обновления работает.
         """
-        # Пытаемся захватить лок *неблокирующим* способом
         if self.update_lock.acquire(blocking=False):
             logger.info("Запуск фонового обновления кэша...")
             try:
-                # Выполняем *блокирующую* I/O операцию
                 self._update_cache_from_db()
             except Exception as e:
                 logger.error(f"Фоновое обновление кэша провалено: {e}", exc_info=True)
             finally:
-                # Гарантированно отпускаем лок
                 self.update_lock.release()
                 logger.info("Фоновое обновление кэша завершено.")
         else:
-            # Если лок уже захвачен, значит, обновление *уже идет*.
-            # Просто выходим, ничего не делая.
             logger.info("Обновление кэша уже в процессе, пропускаем.")
 
     def _update_if_needed(self):
@@ -175,21 +163,16 @@ class NewsCache:
         (Неблокирующий) Проверяет TTL и, если нужно,
         запускает обновление в фоновом потоке.
         """
-        # 1. Проверяем TTL
         if time.time() - self.last_updated <= self.ttl:
-            return  # Кэш свежий, ничего не делаем
+            return
 
-        # 2. Кэш устарел. Проверяем, не идет ли обновление *уже*
         if self.update_lock.locked():
-            return  # Обновление уже запущено, ничего не делаем
+            return
 
-        # 3. Кэш устарел и не обновляется. Запускаем в новом потоке.
-        #    daemon=True, чтобы поток не мешал завершению приложения
         threading.Thread(
             target=self._run_update_in_background,
             daemon=True
         ).start()
-    # --- Конец изменения ---
 
 
 # --- Глобальный экземпляр кэша ---
