@@ -5,7 +5,6 @@
 */
 
 // --- Управление состоянием ---
-// ... (весь код управления cookie и observer остается без изменений) ...
 // 1. Управление Cookie для "долгосрочных" просмотров
 const LONG_TERM_COOKIE_NAME = 'ta_seen_ids';
 const MAX_COOKIE_IDS = 200; // Храним 200 последних ID
@@ -69,34 +68,35 @@ const seenIdsOnPage = new Set();
 
 
 // 3. Intersection Observer
-// Эта функция будет следить за всеми тизерами, которые мы рендерим.
+// --- ИЗМЕНЕНИЕ: Observer теперь выполняет ТОЛЬКО 1 задачу ---
 const observerCallback = (entries, observer) => {
     entries.forEach(entry => {
-        // Проверяем, что элемент виден (isIntersecting),
-        // виден как минимум на 50% (intersectionRatio)
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            const teaserElement = entry.target;
-            const teaserId = parseInt(teaserElement.dataset.teaserId, 10);
-
-            if (teaserId && !seenIdsOnPage.has(teaserId)) {
-                // --- ЭТО И ЕСТЬ ВАШЕ "Req. 2" (50% / 1 сек) ---
-                // (Для 1 секунды нужен `setTimeout`, но для дедупликации
-                // на этой странице достаточно простого добавления)
-
-                // Добавляем в краткосрочный кэш
-                seenIdsOnPage.add(teaserId);
-
-                // Мы больше не отслеживаем этот элемент
-                observer.unobserve(teaserElement);
-            }
+        // Элемент не виден, ничего не делаем
+        if (!entry.isIntersecting) {
+            return;
         }
+
+        const targetElement = entry.target;
+        const teaserId = parseInt(targetElement.dataset.teaserId, 10);
+
+        // --- Задача 1: Это ТИЗЕР (у него есть data-teaser-id) ---
+        // Отслеживаем просмотр для дедупликации
+        if (teaserId && !seenIdsOnPage.has(teaserId)) {
+            // Добавляем в краткосрочный кэш
+            seenIdsOnPage.add(teaserId);
+            // Мы отписываемся от этого элемента,
+            // так как его просмотр засчитан
+            observer.unobserve(targetElement);
+        }
+
+        // --- УДАЛЕНО: Задача 2 (триггер следующей страницы) ---
     });
 };
 
 const intersectionObserver = new IntersectionObserver(observerCallback, {
     root: null, // (вьюпорт)
-    threshold: 0.5 // (срабатывать при 50% видимости)
-    // (Для 1 секунды нужна более сложная логика с `setTimeout`)
+    // Возвращаем 0.5, так как это было для отслеживания *просмотра*
+    threshold: 0.5
 });
 
 // --- Конец управления состоянием ---
@@ -110,7 +110,10 @@ $(document).ready(function () {
     let currentPage = 0; // "Страница" (ряд) ленты
     const $window = $(window);
 
-// ... (функции throttle, getGridColumns, createPlaceholders, renderTeasers без изменений) ...
+    // Лимит рядов в "бесконечной" ленте
+    const MAX_FEED_ROWS = 100;
+
+    // --- ИЗМЕНЕНИЕ: `throttle` ВОЗВРАЩАЕТСЯ ---
     function throttle(func, limit) {
         let inThrottle;
         return function () {
@@ -137,17 +140,16 @@ $(document).ready(function () {
      * Создает плейсхолдеры для тизеров в DOM
      * @param {number} row - Номер ряда
      * @param {number} columns - Количество колонок
-     * @returns {Object} - Карта { "l<row><col>": 1 } для API
+     * @returns {{widgetsMap: Object, lastPlaceholderId: string|null}}
      */
     function createPlaceholders(row, columns) {
         const widgetsMap = {};
+        let lastPlaceholderId = null;
+
         for (let col = 0; col < columns; col++) {
-            // "l" - лента, <row> (hex), <col> (hex)
             const widgetName = `l${row.toString(16)}${col.toString(16)}`;
-            // (ID для плейсхолдера)
             const placeholderId = `widget-${widgetName}`;
 
-            // Убедимся, что плейсхолдер еще не существует
             if ($(`#${placeholderId}`).length === 0) {
                 const $placeholder = $('<div></div>')
                     .attr('id', placeholderId)
@@ -156,24 +158,25 @@ $(document).ready(function () {
                 $feed.append($placeholder);
             }
 
-            // `1` - это quantity (запрашиваем 1 тизер)
+            lastPlaceholderId = placeholderId; // Запоминаем ID *последнего*
             widgetsMap[widgetName] = 1;
         }
-        return widgetsMap;
+        // Возвращаем и карту, и ID последнего плейсхолдера
+        return {widgetsMap, lastPlaceholderId};
     }
 
     /**
      * Рендерит полученные тизеры в плейсхолдеры
      * @param {Object} widgets - Карта { "l<row><col>": { ...teaser_data } }
+     * @param {string|null} lastPlaceholderId - ID элемента, который будет триггером
      */
-    function renderTeasers(widgets) {
+    function renderTeasers(widgets, lastPlaceholderId) {
         for (const widgetName in widgets) {
             const teaser = widgets[widgetName];
-            const $placeholder = $(`#widget-${widgetName}`);
+            const placeholderId = `widget-${widgetName}`;
+            const $placeholder = $(`#${placeholderId}`);
 
             if ($placeholder.length && teaser) {
-                // --- ИСПРАВЛЕНИЕ: Класс "teaser-image-container" изменен на "teaser-image-wrapper" ---
-                // Это исправит ошибку рендеринга (0px height) и остановит бесконечный цикл.
                 const $teaserHTML = $(`
                     <div class="teaser-widget" data-teaser-id="${teaser.id}">
                         <a href="${teaser.url}" class="teaser-link">
@@ -190,10 +193,12 @@ $(document).ready(function () {
                 // Заменяем плейсхолдер
                 $placeholder.replaceWith($teaserHTML);
 
-                // --- НОВОЕ: Начинаем отслеживать этот тизер ---
                 const newTeaserElement = $feed.find(`[data-teaser-id="${teaser.id}"]`)[0];
                 if (newTeaserElement) {
+                    // Наблюдаем за тизером (только для seenIds)
                     intersectionObserver.observe(newTeaserElement);
+
+                    // --- УДАЛЕНО: data-trigger-next ---
                 }
 
             } else if ($placeholder.length) {
@@ -208,25 +213,27 @@ $(document).ready(function () {
      * @param {number} page - Номер ряда (начиная с 0)
      */
     function fetchTeasers(page) {
-        if (isLoading) return;
+        // Проверяем лимит *до* того, как что-либо делать
+        if (isLoading || page >= MAX_FEED_ROWS) {
+            if (page >= MAX_FEED_ROWS) {
+                console.log(`Достигнут лимит ленты (${MAX_FEED_ROWS} рядов).`);
+            }
+            return;
+        }
+
         isLoading = true;
 
         const columns = getGridColumns();
-        const widgetsMap = createPlaceholders(page, columns);
+        const {widgetsMap, lastPlaceholderId} = createPlaceholders(page, columns);
 
-        // Если виджеты не создались (например, 0 колонок), выходим
         if (Object.keys(widgetsMap).length === 0) {
             isLoading = false;
             return;
         }
 
-// ... (остальной код fetchTeasers, checkAndLoadMore, throttledScrollHandler и т.д. без изменений) ...
         const longTermIds = getLongTermSeenIds();
         const pageIds = Array.from(seenIdsOnPage);
-        // ---
 
-        // (Здесь нужен UID, пока используем заглушку.
-        // В идеале он должен приходить из cookie или <meta> тега)
         const uid = 'placeholder-uid-' + (localStorage.getItem('my_uid') || 'new');
 
         console.log(`Запрос для ряда ${page}. Колонки: ${columns}.`);
@@ -249,7 +256,6 @@ $(document).ready(function () {
                 h: $window.height(),
                 widgets: widgetsMap,
 
-                // --- НОВЫЕ ПОЛЯ ---
                 seen_ids_page: pageIds,
                 seen_ids_long_term: longTermIds
             })
@@ -261,52 +267,47 @@ $(document).ready(function () {
                 return response.json();
             })
             .then(data => {
-                // `data` теперь - это { widgets: {...}, newly_served_ids: [...] }
-
                 if (data.widgets) {
-                    renderTeasers(data.widgets);
+                    // Передаем ID (хотя он больше не триггер, на всякий случай)
+                    renderTeasers(data.widgets, lastPlaceholderId);
                 }
 
-                // --- НОВОЕ: Обновляем долгосрочное хранилище ---
                 if (data.newly_served_ids) {
                     updateLongTermSeenIds(data.newly_served_ids);
                     console.log(`Добавлено в cookie ${data.newly_served_ids.length} новых ID.`);
                 }
-
-                // --- ИЗМЕНЕНИЕ: Убрали checkAndLoadMore() отсюда ---
             })
             .catch(error => {
                 console.error('Ошибка при загрузке тизеров:', error);
-                // Очищаем плейсхолдеры, чтобы не висела "Загрузка..."
                 Object.keys(widgetsMap).forEach(widgetName => {
                     $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
                 });
             })
             .finally(() => {
                 isLoading = false;
-                // --- ИЗМЕНЕНИЕ: Перенесли checkAndLoadMore() сюда ---
-                // Он будет вызван *после* того, как isLoading станет false.
+                // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
+                // (Он сработает *после* isLoading = false)
                 checkAndLoadMore();
             });
     }
 
+    // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
     /**
      * Проверяет, заполнена ли страница. Если нет - грузит еще.
      */
     function checkAndLoadMore() {
-        if (isLoading) return; // Уже грузится (или вызвано скроллом)
+        if (isLoading) return;
 
-
-        // Проверяем, есть ли полоса прокрутки
         const hasScrollbar = $(document).height() > $window.height();
 
-        if (!hasScrollbar) {
+        if (!hasScrollbar && currentPage < MAX_FEED_ROWS) {
             console.log("Нет скролла, загружаем еще...");
             currentPage++;
             fetchTeasers(currentPage);
         }
     }
 
+    // --- ИЗМЕНЕНИЕ: Обработчик скролла ВОЗВРАЩАЕТСЯ ---
     /**
      * Обработчик "бесконечной" прокрутки
      */
@@ -314,6 +315,7 @@ $(document).ready(function () {
         // (высота окна + прокрутка) > (высота документа - "триггерная" зона)
         if ($window.scrollTop() + $window.height() > $(document).height() - 400) {
             currentPage++;
+            // fetchTeasers() сам проверит лимит
             fetchTeasers(currentPage);
         }
     }, 200); // Проверять не чаще, чем раз в 200 мс
@@ -331,9 +333,7 @@ $(document).ready(function () {
             // Сбрасываем все
             $feed.empty();
             currentPage = 0;
-            // Краткосрочные ID можно *не* сбрасывать,
-            // т.к. бэкенд все равно их отфильтрует
-            // seenIdsOnPage.clear();
+            // seenIdsOnPage.clear(); // Можно не сбрасывать, бэкенд отфильтрует
 
             // Запускаем первую загрузку
             fetchTeasers(0);

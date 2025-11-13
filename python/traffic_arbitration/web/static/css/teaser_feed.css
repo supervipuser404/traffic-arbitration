@@ -24,19 +24,16 @@
         --feed-columns: 2;
     }
 }
-
 @media (min-width: 900px) {
     .feed-container {
         --feed-columns: 3;
     }
 }
-
 @media (min-width: 1200px) {
     .feed-container {
         --feed-columns: 4;
     }
 }
-
 /* --- Конец нового блока --- */
 
 
@@ -46,7 +43,7 @@
     background-color: #ffffff;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
     text-decoration: none;
     color: #333;
@@ -56,7 +53,7 @@
 
 .teaser-widget:hover {
     transform: translateY(-5px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
 .teaser-image-wrapper {
@@ -76,21 +73,21 @@
 }
 
 .teaser-content {
-    padding: 16px;
+    padding: 12px; /* Уменьшены отступы */
     flex-grow: 1;
 }
 
 .teaser-title {
-    font-size: 1.1rem;
+    font-size: 1.0rem; /* Уменьшен шрифт */
     font-weight: 700;
     line-height: 1.4;
     margin: 0 0 8px 0;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 4; /* Разрешены 4 строки */
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
-    min-height: 2.8em; /* 1.4 * 2 (для 2х строк) */
+    min-height: 5.6em; /* 1.4 * 4 (для 4х строк) */
 }
 
 .teaser-text {
