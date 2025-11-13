@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Form, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+# Добавляем pool_pre_ping=True
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
@@ -89,19 +90,27 @@ async def lifespan(app: FastAPI):
         f"@{host}:{port}/{db_config.get('dbname')}"
     )
 
-    engine = create_engine(sqlalchemy_url)
+    # --- ИЗМЕНЕНИЕ: Добавлен pool_pre_ping=True ---
+    # Это предотвратит зависание при "мертвых" соединениях в пуле
+    # (например, если SSH-туннель "отвалился" по таймауту).
+    engine = create_engine(sqlalchemy_url, pool_pre_ping=True)
+    # --- Конец изменения ---
+
     app_state.db_engine = engine
     app_state.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    # --- ИСПРАВЛЕНИЕ: Внедряем session_maker в кэш ---
-    print("INFO:     Внедрение фабрики сессий в NewsCache...")
+    # 3. Внедряем session_maker в кэш и запускаем *первое* обновление
+    print("INFO:     Внедрение сессии в кэш...")
     news_cache.set_session_maker(app_state.SessionLocal)
 
-    # --- ИСПРАВЛЕНИЕ: Выполняем первую загрузку кэша ---
-    # (Это синхронный вызов, что нормально для lifespan)
-    print("INFO:     Первоначальная загрузка NewsCache...")
-    news_cache.force_update()
-    print("INFO:     Кэш загружен.")
+    print("INFO:     Запуск *первого* (синхронного) обновления кэша...")
+    try:
+        news_cache.force_update()
+        print("INFO:     Кэш успешно обновлен.")
+    except Exception as e:
+        print(f"ERROR:    Не удалось выполнить первое обновление кэша: {e}")
+        # В зависимости от логики, здесь можно либо упасть,
+        # либо продолжить с пустым кэшем.
 
     # Приложение готово к работе
     yield
@@ -120,7 +129,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # --- Инициализация сервисов ---
-# (Кэш news_cache уже импортирован и инициализирован выше)
+# Создаем единственный экземпляр ранжировщика, передавая ему кэш
 news_ranker = NewsRanker(cache=news_cache)
 # Создаем сервис тизеров, передавая ему ранжировщик как зависимость
 teaser_service = TeaserService(news_ranker=news_ranker)
@@ -148,15 +157,18 @@ def get_db():
         db.close()
 
 
-# --- Маршруты ---
-
+# Основной маршрут для главной страницы
 @app.get("/", response_class=HTMLResponse)
-@app.get("/cat/{category}", response_class=HTMLResponse)
 async def read_index(request: Request, category: Optional[str] = None):
-    """
-    Рендерит главную страницу или страницу категории.
-    Оба используют один и тот же шаблон 'index.html'.
-    """
+    # 'category' здесь None
+    context = template_context(request)
+    context.update({"category": None})
+    return templates.TemplateResponse("index.html", context)
+
+
+@app.get("/cat/{category}", response_class=HTMLResponse)
+async def read_category(request: Request, category: str):
+    # 'category' здесь имеет значение
     context = template_context(request)
     context.update({"category": category})
     return templates.TemplateResponse("index.html", context)
@@ -178,34 +190,7 @@ async def manifest(request: Request):
     )
 
 
-# API-эндпоинт, возвращающий данные новостей (старый)
-@app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
-async def get_news(
-        request_str: str = Form(..., alias="request"),
-        b: str = Form(...),
-        after: int = Form(0),
-        db: Session = Depends(get_db)
-):
-    try:
-        request_params = json.loads(request_str)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON in 'request' parameter")
-
-    limit = 20
-    offset = after
-
-    news_previews_db = (
-        db.query(ArticlePreviewDB)
-        .filter(ArticlePreviewDB.is_active == True)
-        .order_by(ArticlePreviewDB.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    return news_previews_db
-
-
-# --- API-эндпоинт для тизеров (/etc) ---
+# --- ОБНОВЛЕННЫЙ ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
@@ -225,8 +210,6 @@ async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     Возвращает:
     - Словарь {widgets: {widget_name: [список ArticlePreviewSchema]}}
     """
-    # На данном этапе данные uid, ip, ua и т.д. используются только для
-    # валидации, но не для логики. В будущем они понадобятся для ML.
     # Вся логика инкапсулирована в TeaserService.
     # В будущем мы будем расширять TeaserService, а не этот эндпоинт.
 
