@@ -93,6 +93,16 @@ async def lifespan(app: FastAPI):
     app_state.db_engine = engine
     app_state.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+    # --- ИСПРАВЛЕНИЕ: Внедряем session_maker в кэш ---
+    print("INFO:     Внедрение фабрики сессий в NewsCache...")
+    news_cache.set_session_maker(app_state.SessionLocal)
+
+    # --- ИСПРАВЛЕНИЕ: Выполняем первую загрузку кэша ---
+    # (Это синхронный вызов, что нормально для lifespan)
+    print("INFO:     Первоначальная загрузка NewsCache...")
+    news_cache.force_update()
+    print("INFO:     Кэш загружен.")
+
     # Приложение готово к работе
     yield
 
@@ -110,7 +120,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # --- Инициализация сервисов ---
-# Создаем единственный экземпляр ранжировщика, передавая ему кэш
+# (Кэш news_cache уже импортирован и инициализирован выше)
 news_ranker = NewsRanker(cache=news_cache)
 # Создаем сервис тизеров, передавая ему ранжировщик как зависимость
 teaser_service = TeaserService(news_ranker=news_ranker)
@@ -138,27 +148,15 @@ def get_db():
         db.close()
 
 
-# --- ОБНОВЛЕННЫЙ Маршрут для главной страницы ---
+# --- Маршруты ---
+
 @app.get("/", response_class=HTMLResponse)
-async def read_index(request: Request):
-    """
-    Рендерит главную страницу (которая теперь = страница категории).
-    """
-    context = template_context(request)
-    context.update({"category": None})  # Для главной страницы категория = None
-    return templates.TemplateResponse("index.html", context)
-
-
-# --- НОВЫЙ Маршрут для страниц категорий ---
 @app.get("/cat/{category}", response_class=HTMLResponse)
-async def read_category(request: Request, category: str):
+async def read_index(request: Request, category: Optional[str] = None):
     """
-    Рендерит страницу категории. Использует тот же шаблон, что и главная.
+    Рендерит главную страницу или страницу категории.
+    Оба используют один и тот же шаблон 'index.html'.
     """
-    # В будущем здесь может быть проверка, существует ли категория
-    # if not category_exists(category):
-    #     raise HTTPException(status_code=404, detail="Category not found")
-
     context = template_context(request)
     context.update({"category": category})
     return templates.TemplateResponse("index.html", context)
@@ -180,7 +178,7 @@ async def manifest(request: Request):
     )
 
 
-# API-эндпоинт, возвращающий данные новостей (оставляем для совместимости)
+# API-эндпоинт, возвращающий данные новостей (старый)
 @app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
 async def get_news(
         request_str: str = Form(..., alias="request"),
@@ -188,20 +186,14 @@ async def get_news(
         after: int = Form(0),
         db: Session = Depends(get_db)
 ):
-    """
-    Возвращает список превью новостей на основе POST-запроса.
-    """
     try:
-        # Просто парсим JSON, но пока не используем его для фильтрации
         request_params = json.loads(request_str)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in 'request' parameter")
 
-    # Устанавливаем лимит по умолчанию, так как он больше не передается
     limit = 20
     offset = after
 
-    # Запрашиваем из БД объекты SQLAlchemy
     news_previews_db = (
         db.query(ArticlePreviewDB)
         .filter(ArticlePreviewDB.is_active == True)
@@ -210,13 +202,10 @@ async def get_news(
         .limit(limit)
         .all()
     )
-    # FastAPI автоматически преобразует список объектов SQLAlchemy
-    # в JSON, соответствующий схеме ArticlePreviewSchema,
-    # благодаря `from_attributes = True`.
     return news_previews_db
 
 
-# --- ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
+# --- API-эндпоинт для тизеров (/etc) ---
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
@@ -290,4 +279,7 @@ def read_article_full(request: Request, category: str, article_slug: str, db: Se
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", reload=True)
+    # Обратите внимание: reload=True может вызывать
+    # многократный запуск lifespan.
+    # Для production используйте gunicorn (как у вас и настроено).
+    uvicorn.run("traffic_arbitration.web.main:app", reload=True, host="0.0.0.0", port=8000)
