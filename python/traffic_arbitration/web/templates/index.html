@@ -14,11 +14,10 @@
 
 {#
   Этот блок вставляет CSS-стили.
-  Мы убрали inline-стили и заменили их ссылкой на .css файл
 #}
 {% block head %}
     {{ super() }}
-    <link rel="stylesheet" href="/static/css/teaser_feed.css">
+    <link rel="stylesheet" href="/static/css/teaser_feed.css?v=2">
 {% endblock %}
 
 {#

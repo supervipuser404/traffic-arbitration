@@ -1,6 +1,10 @@
 from traffic_arbitration.models import ArticlePreview
 from .cache import NewsCache
-from typing import Dict, List
+from typing import Dict, List, Set
+from .schemas import TeaserRequestSchema
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NewsRanker:
@@ -14,7 +18,7 @@ class NewsRanker:
 
     def get_ranked_previews(
             self,
-            limit: int = 20,
+            limit: int | None = 20,  # --- ИЗМЕНЕНИЕ: limit=None, чтобы получить ВСЕ ---
             offset: int = 0,
             # category: str | None = None # Параметр для будущего расширения
     ) -> list[ArticlePreview]:
@@ -32,19 +36,13 @@ class NewsRanker:
         filtered_previews = all_previews  # Временно
 
         # --- Этап 2: Ранжирование (сортировка) ---
-        # Сейчас - простая сортировка по дате.
-        # В будущем здесь может быть вызов сложной ML-модели,
-        # которая пересортирует `filtered_previews` на основе бизнес-логики.
-
-        # Сортируем по дате публикации в обратном порядке (сначала новые)
-        # Убедимся, что publication_date не None
-        ranked_previews = sorted(
-            filtered_previews,
-            key=lambda p: p.publication_date,
-            reverse=True
-        )
+        # Мы предполагаем, что `all_previews` из кэша *уже* отсортированы
+        # по `publication_date` (как мы это делали в cache.py)
+        ranked_previews = filtered_previews
 
         # --- Этап 3: Пагинация ---
+        if limit is None:
+            return ranked_previews[offset:]
         return ranked_previews[offset: offset + limit]
 
 
@@ -52,45 +50,116 @@ class TeaserService:
     """
     Сервисный слой для получения тизеров (рекламы, новостей и т.п.)
     для виджетов.
-
-    На данном этапе является заглушкой и использует NewsRanker
-    для получения контента.
     """
 
     def __init__(self, news_ranker: NewsRanker):
-        # Временно используем NewsRanker как источник данных
         self.news_ranker = news_ranker
+        # Можно добавить кэш для (uid, url) -> seen_ids,
+        # но пока, по вашей просьбе, делаем stateless.
 
     def get_teasers_for_widgets(
             self,
-            widgets: Dict[str, int]
-            # Примечание: в будущем метод будет принимать всю схему
-            # TeaserRequestSchema, чтобы использовать uid, ip, ua и т.д.
-    ) -> Dict[str, List[ArticlePreview]]:
+            request_data: TeaserRequestSchema
+    ) -> Dict:  # Возвращает словарь, который Pydantic превратит в TeaserResponseSchema
         """
-        Формирует ответ для эндпоинта /etc.
+        Формирует ответ для эндпоинта /etc с учетом дедупликации.
 
         Args:
-            widgets: Словарь {widget_name: quantity}
+            request_data: Pydantic-схема TeaserRequestSchema
 
         Returns:
-            Словарь {widget_name: [список ArticlePreview]}
+            Словарь { "widgets": {...}, "newly_served_ids": [...] }
         """
-        # В будущем здесь будет сложная логика:
-        # 1. Анализ `request_data` (uid, ip, loc...)
-        # 2. Обращение к RTB-системам
-        # 3. Обращение к ML-моделям ранжирования
-        # 4. Формирование ответа из *разных* источников (новости, реклама)
 
-        # --- Временная реализация (заглушка) ---
-        # Просто запрашиваем N самых свежих новостей для каждого виджета.
-        response_widgets: Dict[str, List[ArticlePreview]] = {}
-        for widget_name, quantity in widgets.items():
-            previews = self.news_ranker.get_ranked_previews(
-                limit=quantity,
-                offset=0
-            )
-            response_widgets[widget_name] = previews
-        # --- Конец временной реализации ---
+        # --- Шаг 1: Определяем, кого исключить ---
 
-        return response_widgets
+        # ID, которые *уже есть* на этой странице (из JS Set)
+        seen_on_page_set = set(request_data.seen_ids_page)
+        # ID, которые *давно видели* (из Cookie)
+        seen_long_term_set = set(request_data.seen_ids_long_term)
+
+        # Общий список "забаненных" ID
+        excluded_ids = seen_on_page_set.union(seen_long_term_set)
+
+        # --- Шаг 2: Получаем всех кандидатов ---
+        # `get_ranked_previews(limit=None)` вернет *все* тизеры из кэша,
+        # уже отсортированные по свежести (по `publication_date`).
+        all_teasers = self.news_ranker.get_ranked_previews(limit=None)
+
+        # --- Шаг 3: Формируем пулы ---
+
+        # Пул 1: "Свежие", которых пользователь еще не видел
+        available_teasers = []
+
+        # Пул 2: "Повторные", которые можно показать, если свежие кончились
+        # (Важно: они должны быть в том же порядке, что и в `all_teasers`)
+        reusable_teasers = []
+
+        for teaser in all_teasers:
+            if teaser.id not in excluded_ids:
+                available_teasers.append(teaser)
+
+            # Мы можем повторно использовать только "долгосрочно" просмотренные.
+            # Те, что *уже на этой странице* (seen_on_page_set),
+            # нельзя использовать ни в коем случае (для дедупликации в моменте).
+            elif teaser.id in seen_long_term_set and teaser.id not in seen_on_page_set:
+                reusable_teasers.append(teaser)
+
+        # Превращаем в итераторы, чтобы удобно "вынимать" по одному
+        available_iter = iter(available_teasers)
+        reusable_iter = iter(reusable_teasers)
+
+        logger.info(
+            f"UID: {request_data.uid}. "
+            f"Доступно: {len(available_teasers)}, "
+            f"Повторно: {len(reusable_teasers)}, "
+            f"Исключено: {len(excluded_ids)}"
+        )
+
+        # --- Шаг 4: Сборка ответа ---
+        response_widgets: Dict[str, ArticlePreview] = {}
+        response_newly_served_ids: List[int] = []
+
+        # Мы используем `served_on_this_request` для дедупликации *внутри*
+        # одного запроса (если вдруг `available_iter` вернет один и тот же
+        # ID дважды, хотя он не должен)
+        served_on_this_request: Set[int] = set()
+
+        # `request_data.widgets` - это {"l00": 1, "l10": 1, ...}
+        for widget_name, quantity in request_data.widgets.items():
+
+            # (На будущее) Если `quantity > 1`, этот цикл сработает
+            for _ in range(quantity):
+                teaser = None
+                try:
+                    # Сначала пытаемся взять "свежий"
+                    teaser = next(available_iter)
+                    while teaser.id in served_on_this_request:
+                        teaser = next(available_iter)
+
+                except StopIteration:
+                    try:
+                        # "Свежие" кончились. Берем "повторный"
+                        teaser = next(reusable_iter)
+                        while teaser.id in served_on_this_request:
+                            teaser = next(reusable_iter)
+
+                    except StopIteration:
+                        # Тизеры кончились ВООБЩЕ.
+                        logger.warning(f"Тизеры закончились! (UID: {request_data.uid})")
+                        break  # Прерываем цикл `for _ in range(quantity)`
+
+                if teaser:
+                    # (Мы поддерживаем только quantity=1, поэтому просто перезаписываем)
+                    response_widgets[widget_name] = teaser
+                    served_on_this_request.add(teaser.id)
+
+                    # Если тизер не был в "повторных",
+                    # значит, он "новый" для пользователя.
+                    if teaser.id not in seen_long_term_set:
+                        response_newly_served_ids.append(teaser.id)
+
+        return {
+            "widgets": response_widgets,
+            "newly_served_ids": list(set(response_newly_served_ids))  # Убираем дубли на всякий случай
+        }

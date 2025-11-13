@@ -15,6 +15,31 @@
     gap: 20px;
 }
 
+/* --- НОВОЕ: Адаптивные медиа-запросы для колонок --- */
+/* Это исправит баг с "одной колонкой".
+  JavaScript (getGridColumns) считывает эту переменную.
+*/
+@media (min-width: 600px) {
+    .feed-container {
+        --feed-columns: 2;
+    }
+}
+
+@media (min-width: 900px) {
+    .feed-container {
+        --feed-columns: 3;
+    }
+}
+
+@media (min-width: 1200px) {
+    .feed-container {
+        --feed-columns: 4;
+    }
+}
+
+/* --- Конец нового блока --- */
+
+
 /* --- Стили Тизера (Карточка) --- */
 
 .teaser-widget {
@@ -81,7 +106,13 @@
 }
 
 /* --- Заглушка для загрузки --- */
-.loading-placeholder {
+/*
+  ПРИМЕЧАНИЕ:
+  Класс .loading-placeholder в .css есть,
+  но .js использует .teaser-widget-placeholder.
+  Я исправлю это в .js для консистентности.
+*/
+.teaser-widget-placeholder {
     min-height: 250px;
     background: #f9f9f9;
     border-radius: 12px;
@@ -89,4 +120,11 @@
     align-items: center;
     justify-content: center;
     color: #ccc;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+}
+
+.teaser-widget-placeholder.empty {
+    color: #ddd;
+    background: #fafafa;
 }

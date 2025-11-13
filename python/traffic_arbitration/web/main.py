@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request, Form, HTTPException, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-# Добавляем pool_pre_ping=True
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
@@ -90,11 +89,10 @@ async def lifespan(app: FastAPI):
         f"@{host}:{port}/{db_config.get('dbname')}"
     )
 
-    # --- ИЗМЕНЕНИЕ: Добавлен pool_pre_ping=True ---
+    # Добавлен pool_pre_ping=True
     # Это предотвратит зависание при "мертвых" соединениях в пуле
     # (например, если SSH-туннель "отвалился" по таймауту).
     engine = create_engine(sqlalchemy_url, pool_pre_ping=True)
-    # --- Конец изменения ---
 
     app_state.db_engine = engine
     app_state.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -133,6 +131,7 @@ app = FastAPI(lifespan=lifespan)
 news_ranker = NewsRanker(cache=news_cache)
 # Создаем сервис тизеров, передавая ему ранжировщик как зависимость
 teaser_service = TeaserService(news_ranker=news_ranker)
+
 
 # Подключаем статику: здесь файлы CSS, JS, изображения и т.п.
 app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
@@ -190,37 +189,66 @@ async def manifest(request: Request):
     )
 
 
-# --- ОБНОВЛЕННЫЙ ЭНДПОИНТ ДЛЯ ТИЗЕРОВ ---
+# API-эндпоинт, возвращающий данные новостей
+@app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
+async def get_news(
+        request_str: str = Form(..., alias="request"),
+        b: str = Form(...),
+        after: int = Form(0),
+        db: Session = Depends(get_db)
+):
+    """
+    Возвращает список превью новостей на основе POST-запроса.
+    """
+    try:
+        # Просто парсим JSON, но пока не используем его для фильтрации
+        request_params = json.loads(request_str)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in 'request' parameter")
+
+    # Устанавливаем лимит по умолчанию, так как он больше не передается
+    limit = 20
+    offset = after
+
+    # Запрашиваем из БД объекты SQLAlchemy
+    news_previews_db = (
+        db.query(ArticlePreviewDB)
+        .filter(ArticlePreviewDB.is_active == True)
+        .order_by(ArticlePreviewDB.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    # FastAPI автоматически преобразует список объектов SQLAlchemy
+    # в JSON, соответствующий схеме ArticlePreviewSchema,
+    # благодаря `from_attributes = True`.
+    return news_previews_db
+
+
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
-    API-эндпоинт для запроса тизеров (новостных превью) для виджетов.
+    API-эндпоинт для запроса тизеров (новостных превью) для виджетов
+    с учетом дедупликации.
 
     Принимает (в теле запроса):
-    - uid: Идентификатор пользователя
-    - ip: IP-адрес
-    - ua: User-Agent
-    - url: URL страницы
-    - loc: Локаль (по умолч. "ru")
-    - w: Ширина
-    - h: Высота
-    - d: Плотность (опционально)
-    - widgets: Словарь {widget_name: quantity}
+    - TeaserRequestSchema (uid, ip, ua, widgets, ...)
+    - seen_ids_page: ID, уже показанные на этой странице
+    - seen_ids_long_term: ID из cookie (долгосрочная память)
 
-    Возвращает:
-    - Словарь {widgets: {widget_name: [список ArticlePreviewSchema]}}
+    Возвращает (TeaserResponseSchema):
+    - widgets: Словарь {widget_name: ArticlePreviewSchema}
+    - newly_served_ids: Список ID, которые клиент должен добавить в cookie
     """
     # Вся логика инкапсулирована в TeaserService.
-    # В будущем мы будем расширять TeaserService, а не этот эндпоинт.
-
-    # Передаем только те данные, которые сервису нужны *сейчас*
-    response_widgets = teaser_service.get_teasers_for_widgets(
-        widgets=request_data.widgets
+    # Передаем *весь* объект запроса в сервис.
+    response_data = teaser_service.get_teasers_for_widgets(
+        request_data=request_data
     )
 
-    # FastAPI/Pydantic автоматически преобразует List[ArticlePreview] (модель)
-    # в List[ArticlePreviewSchema] (схему) для JSON-ответа.
-    return {"widgets": response_widgets}
+    # Сервис уже возвращает словарь,
+    # соответствующий TeaserResponseSchema ({"widgets": ..., "newly_served_ids": ...})
+    return response_data
 
 
 @app.get("/{category}/{article_slug}", response_class=HTMLResponse)
