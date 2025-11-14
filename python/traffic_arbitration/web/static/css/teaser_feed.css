@@ -73,7 +73,7 @@
 }
 
 .teaser-content {
-    padding: 12px; /* Уменьшены отступы */
+    padding: 3px; /* Уменьшены отступы */
     flex-grow: 1;
 }
 
@@ -81,7 +81,7 @@
     font-size: 1.0rem; /* Уменьшен шрифт */
     font-weight: 700;
     line-height: 1.4;
-    margin: 0 0 8px 0;
+    margin: 5px 5px 8px 5px;
     display: -webkit-box;
     -webkit-line-clamp: 4; /* Разрешены 4 строки */
     -webkit-box-orient: vertical;

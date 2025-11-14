@@ -1,6 +1,6 @@
 from traffic_arbitration.models import ArticlePreview
 from .cache import NewsCache
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
 from .schemas import TeaserRequestSchema
 import logging
 
@@ -18,26 +18,40 @@ class NewsRanker:
 
     def get_ranked_previews(
             self,
-            limit: int | None = 20,  # --- ИЗМЕНЕНИЕ: limit=None, чтобы получить ВСЕ ---
+            limit: int | None = 20,
             offset: int = 0,
-            # category: str | None = None # Параметр для будущего расширения
+            category: str | None = None
     ) -> list[ArticlePreview]:
         """
         Возвращает отфильтрованный и отсортированный список превью.
         """
         all_previews = self.cache.get_previews()
 
-        # --- Этап 1: Фильтрация (пока не используется, но есть задел) ---
-        # if category:
-        #     filtered_previews = [p for p in all_previews if p.category == category]
-        # else:
-        #     filtered_previews = all_previews
+        # --- Этап 1: Фильтрация ---
+        if category:
+            # Пытаемся отфильтровать по категории
+            filtered_previews = [
+                p for p in all_previews
+                if hasattr(p, 'category') and p.category == category
+            ]
 
-        filtered_previews = all_previews  # Временно
+            # --- Логика ФОЛБЭКА ---
+            # Если для категории ничего не найдено,
+            # используем все тизеры.
+            if not filtered_previews:
+                logger.warning(
+                    f"Категория '{category}' не найдена или для нее нет тизеров. "
+                    f"Выполняется фолбэк: показываем все тизеры."
+                )
+                filtered_previews = all_previews
+        else:
+            # Категория не задана (главная страница)
+            filtered_previews = all_previews
 
         # --- Этап 2: Ранжирование (сортировка) ---
         # Мы предполагаем, что `all_previews` из кэша *уже* отсортированы
-        # по `publication_date` (как мы это делали в cache.py)
+        # по `publication_date` (как мы это делали в cache.py),
+        # поэтому `filtered_previews` сохраняют нужный порядок.
         ranked_previews = filtered_previews
 
         # --- Этап 3: Пагинация ---
@@ -54,8 +68,6 @@ class TeaserService:
 
     def __init__(self, news_ranker: NewsRanker):
         self.news_ranker = news_ranker
-        # Можно добавить кэш для (uid, url) -> seen_ids,
-        # но пока, по вашей просьбе, делаем stateless.
 
     def get_teasers_for_widgets(
             self,
@@ -78,13 +90,15 @@ class TeaserService:
         # ID, которые *давно видели* (из Cookie)
         seen_long_term_set = set(request_data.seen_ids_long_term)
 
-        # Общий список "забаненных" ID
         excluded_ids = seen_on_page_set.union(seen_long_term_set)
 
-        # --- Шаг 2: Получаем всех кандидатов ---
-        # `get_ranked_previews(limit=None)` вернет *все* тизеры из кэша,
-        # уже отсортированные по свежести (по `publication_date`).
-        all_teasers = self.news_ranker.get_ranked_previews(limit=None)
+        # --- Шаг 2: Получаем всех кандидатов (УЖЕ С ФИЛЬТРОМ) ---
+
+        # Передаем категорию (может быть None) в NewsRanker
+        all_teasers = self.news_ranker.get_ranked_previews(
+            limit=None,
+            category=request_data.category
+        )
 
         # --- Шаг 3: Формируем пулы ---
 
@@ -110,7 +124,7 @@ class TeaserService:
         reusable_iter = iter(reusable_teasers)
 
         logger.info(
-            f"UID: {request_data.uid}. "
+            f"UID: {request_data.uid}, Категория: {request_data.category}. "
             f"Доступно: {len(available_teasers)}, "
             f"Повторно: {len(reusable_teasers)}, "
             f"Исключено: {len(excluded_ids)}"

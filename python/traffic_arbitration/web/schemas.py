@@ -120,6 +120,8 @@ class TeaserRequestSchema(BaseModel):
     seen_ids_page: List[int] = []
     # ID из cookie (долгосрочная память)
     seen_ids_long_term: List[int] = []
+    # Код категории (из URL)
+    category: Optional[str] = None
 
 
 class TeaserResponseSchema(BaseModel):
