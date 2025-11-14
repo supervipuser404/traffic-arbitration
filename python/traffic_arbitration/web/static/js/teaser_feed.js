@@ -108,7 +108,7 @@ $(document).ready(function () {
     // --- ИЗМЕНЕНИЕ: Триггер теперь создается динамически ---
     const $trigger = $('<div id="feed-load-trigger-dynamic"></div>');
     // Скрываем его от пользователя
-    $trigger.css({height: '1px', width: '100%'});
+    $trigger.css({ height: '1px', width: '100%' });
     // Добавляем его в *конец* ленты
     $feed.append($trigger);
     // --- Конец изменения ---
@@ -170,7 +170,7 @@ $(document).ready(function () {
             lastPlaceholderId = placeholderId; // Запоминаем ID *последнего*
             widgetsMap[widgetName] = 1;
         }
-        return {widgetsMap, lastPlaceholderId};
+        return { widgetsMap, lastPlaceholderId };
     }
 
     /**
@@ -236,7 +236,7 @@ $(document).ready(function () {
 
         const columns = getGridColumns();
         // --- ИЗМЕНЕНИЕ: `page` - это *текущая* страница (которая 0) ---
-        const {widgetsMap, lastPlaceholderId} = createPlaceholders(page, columns);
+        const { widgetsMap, lastPlaceholderId } = createPlaceholders(page, columns);
 
         if (Object.keys(widgetsMap).length === 0) {
             isLoading = false;
@@ -269,37 +269,40 @@ $(document).ready(function () {
                 widgets: widgetsMap,
 
                 seen_ids_page: pageIds,
-                seen_ids_long_term: longTermIds
+                seen_ids_long_term: longTermIds,
+
+                // --- НОВОЕ ПОЛЕ: Передаем категорию ---
+                category: window.currentCategory // (будет null для главной)
             })
         })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.widgets) {
-                    renderTeasers(data.widgets, lastPlaceholderId);
-                }
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.widgets) {
+                renderTeasers(data.widgets, lastPlaceholderId);
+            }
 
-                if (data.newly_served_ids) {
-                    updateLongTermSeenIds(data.newly_served_ids);
-                    console.log(`Добавлено в cookie ${data.newly_served_ids.length} новых ID.`);
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка при загрузке тизеров:', error);
-                Object.keys(widgetsMap).forEach(widgetName => {
-                    $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
-                });
-            })
-            .finally(() => {
-                isLoading = false;
-                // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
-                // (Он сработает *после* isLoading = false)
-                checkAndLoadMore();
-            });
+            if (data.newly_served_ids) {
+                updateLongTermSeenIds(data.newly_served_ids);
+                console.log(`Добавлено в cookie ${data.newly_served_ids.length} новых ID.`);
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке тизеров:', error);
+             Object.keys(widgetsMap).forEach(widgetName => {
+                 $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
+             });
+        })
+        .finally(() => {
+            isLoading = false;
+            // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
+            // (Он сработает *после* isLoading = false)
+            checkAndLoadMore();
+        });
     }
 
     // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
@@ -318,7 +321,7 @@ $(document).ready(function () {
         // а мы не достигли лимита
         if (triggerTop <= windowHeight && currentPage < MAX_FEED_ROWS) {
             console.log("Триггер виден, загружаем еще...");
-            // `fetchTeasers` сам увеличит `currentPage`
+            // `fetchTeasers` сам УВЕЛИЧИТ `currentPage`
             fetchTeasers(currentPage);
         }
     }
