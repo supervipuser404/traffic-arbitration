@@ -1,15 +1,28 @@
 import time
 import logging
 import threading
-from typing import List
+from typing import List, Dict, Any, Optional
 from sqlalchemy import select, func
 from sqlalchemy.orm import sessionmaker, Session
 from traffic_arbitration.models import (
     ArticlePreview, Article, ArticleCategory, Category
 )
+from dataclasses import dataclass
+from datetime import datetime
 
 # Настройка логгера
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CachedPreviewItem:
+    """
+    Явная структура данных (контракт) для хранения
+    объекта превью и его "виртуальных" полей в кэше.
+    """
+    preview_obj: ArticlePreview
+    publication_date: Optional[datetime]
+    category: Optional[str]
 
 
 class NewsCache:
@@ -20,7 +33,7 @@ class NewsCache:
     def __init__(self, ttl_seconds: int = 300):
         self.ttl = ttl_seconds
 
-        self.previews: List[ArticlePreview] = []
+        self.previews: List[CachedPreviewItem] = []
 
         self.last_updated: float = 0
         self.update_lock = threading.Lock()
@@ -35,7 +48,7 @@ class NewsCache:
         self.session_maker = session_maker
         logger.info("Фабрика сессий успешно внедрена в кэш.")
 
-    def get_previews(self) -> List[ArticlePreview]:
+    def get_previews(self) -> List[CachedPreviewItem]:
         """
         Основной метод для получения превью из кэша.
         Запускает обновление в фоне, если кэш устарел.
@@ -105,14 +118,20 @@ class NewsCache:
                     # Этот объект "transient" (не привязан к сессии)
                     preview_obj = ArticlePreview(**model_data)
 
-                    # 4. "Прикрепляем" дополнительные данные к самому объекту
-                    preview_obj.publication_date = extra_data["publication_date"]
-                    preview_obj.category = extra_data["category"]
-
-                    new_previews.append(preview_obj)
+                    # 4. Сохраняем в dataclass
+                    new_previews.append(CachedPreviewItem(
+                        preview_obj=preview_obj,
+                        publication_date=extra_data["publication_date"],
+                        category=extra_data["category"]
+                    ))
 
                 except TypeError as e:
                     logger.error(f"Ошибка при создании ArticlePreview: {e}. Данные: {model_data}")
+
+            # Объекты `preview_obj` в `new_previews`
+            # УЖЕ "отсоединены", так как
+            # они были созданы вручную (transient) и никогда
+            # не добавлялись в db_session (через add()).
 
             # Атомарно заменяем старые данные новыми
             self.previews = new_previews
