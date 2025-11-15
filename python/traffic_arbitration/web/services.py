@@ -1,5 +1,5 @@
 from traffic_arbitration.models import ArticlePreview
-from .cache import NewsCache
+from .cache import NewsCache, CachedPreviewItem
 from typing import Dict, List, Set, Optional
 from .schemas import TeaserRequestSchema
 import logging
@@ -25,34 +25,31 @@ class NewsRanker:
         """
         Возвращает отфильтрованный и отсортированный список превью.
         """
-        all_previews = self.cache.get_previews()
+        all_preview_items = self.cache.get_previews()
 
         # --- Этап 1: Фильтрация ---
         if category:
             # Пытаемся отфильтровать по категории
-            filtered_previews = [
-                p for p in all_previews
-                if hasattr(p, 'category') and p.category == category
+            filtered_items = [
+                item for item in all_preview_items
+                if item.category == category
             ]
 
             # --- Логика ФОЛБЭКА ---
-            # Если для категории ничего не найдено,
-            # используем все тизеры.
-            if not filtered_previews:
+            if not filtered_items:
                 logger.warning(
                     f"Категория '{category}' не найдена или для нее нет тизеров. "
                     f"Выполняется фолбэк: показываем все тизеры."
                 )
-                filtered_previews = all_previews
+                filtered_items = all_preview_items
         else:
             # Категория не задана (главная страница)
-            filtered_previews = all_previews
+            filtered_items = all_preview_items
 
         # --- Этап 2: Ранжирование (сортировка) ---
-        # Мы предполагаем, что `all_previews` из кэша *уже* отсортированы
-        # по `publication_date` (как мы это делали в cache.py),
-        # поэтому `filtered_previews` сохраняют нужный порядок.
-        ranked_previews = filtered_previews
+        # Мы предполагаем, что `all_preview_items` из кэша *уже* отсортированы
+        # "Извлекаем" объекты из dataclass ---
+        ranked_previews = [item.preview_obj for item in filtered_items]
 
         # --- Этап 3: Пагинация ---
         if limit is None:
@@ -94,7 +91,8 @@ class TeaserService:
 
         # --- Шаг 2: Получаем всех кандидатов (УЖЕ С ФИЛЬТРОМ) ---
 
-        # Передаем категорию (может быть None) в NewsRanker
+        # `get_ranked_previews` теперь вернет List[ArticlePreview]
+        # (уже отфильтрованный по категории и без "магических" атрибутов)
         all_teasers = self.news_ranker.get_ranked_previews(
             limit=None,
             category=request_data.category
