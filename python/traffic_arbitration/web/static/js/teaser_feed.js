@@ -68,7 +68,6 @@ const seenIdsOnPage = new Set();
 
 
 // 3. Intersection Observer
-// --- ИЗМЕНЕНИЕ: Observer теперь выполняет ТОЛЬКО 1 задачу ---
 const observerCallback = (entries, observer) => {
     entries.forEach(entry => {
         // Элемент не виден, ничего не делаем
@@ -88,8 +87,6 @@ const observerCallback = (entries, observer) => {
             // так как его просмотр засчитан
             observer.unobserve(targetElement);
         }
-
-        // --- УДАЛЕНО: Задача 2 (триггер) ---
     });
 };
 
@@ -98,20 +95,55 @@ const intersectionObserver = new IntersectionObserver(observerCallback, {
     threshold: 0.5 // 50% видимости для засчитывания просмотра
 });
 
-// --- Конец управления состоянием ---
+/**
+ * Создает URL для тизера с параметрами трекинга.
+ * @param {string} backendUrlString - /preview/{slug}?param=1
+ * @param {string} widgetName - l00, l01, ...
+ * @returns {string} - Полный URL для `href`
+ */
+function buildTrackingUrl(backendUrlString, widgetName) {
+    try {
+        // 1. URL, который пришел от бэка (может иметь query-params)
+        const backendUrl = new URL(backendUrlString, window.location.origin);
+        const backendParams = new URLSearchParams(backendUrl.search);
+
+        // 2. URL текущей страницы (откуда кликнули)
+        const currentPageUrl = new URL(window.location.href);
+        const finalParams = new URLSearchParams(currentPageUrl.search);
+
+        // 3. Добавляем/перезаписываем параметры текущей страницы
+        finalParams.set('w', $(window).width());
+        finalParams.set('ws', widgetName);
+
+        // 4. Параметры бэкенда (из teaser.url) имеют наивысший приоритет
+        backendParams.forEach((value, key) => {
+            finalParams.set(key, value);
+        });
+
+        // 5. Собираем итоговую ссылку
+        // (Используем pathname от бэка, а query - собранный)
+        const finalUrl = new URL(backendUrl.pathname, window.location.origin);
+        finalUrl.search = finalParams.toString();
+
+        return finalUrl.href;
+
+    } catch (e) {
+        console.error("Ошибка при построении URL:", e);
+        // Фолбэк на оригинальный URL, если что-то пошло не так
+        return backendUrlString;
+    }
+}
+
+// --- Конец новой функции ---
 
 
 $(document).ready(function () {
     const $feed = $('#teaser-feed');
     if (!$feed.length) return;
 
-    // --- ИЗМЕНЕНИЕ: Триггер теперь создается динамически ---
     const $trigger = $('<div id="feed-load-trigger-dynamic"></div>');
-    // Скрываем его от пользователя
-    $trigger.css({ height: '1px', width: '100%' });
-    // Добавляем его в *конец* ленты
+    $trigger.css({height: '1px', width: '100%'});
     $feed.append($trigger);
-    // --- Конец изменения ---
 
     let isLoading = false;
     let currentPage = 0; // "Страница" (ряд) ленты
@@ -120,7 +152,6 @@ $(document).ready(function () {
     // Лимит рядов в "бесконечной" ленте
     const MAX_FEED_ROWS = 100;
 
-    // --- ИЗМЕНЕНИЕ: `throttle` ВОЗВРАЩАЕТСЯ ---
     function throttle(func, limit) {
         let inThrottle;
         return function () {
@@ -163,14 +194,13 @@ $(document).ready(function () {
                     .addClass('teaser-widget-placeholder')
                     .text(`Загрузка ${widgetName}...`);
 
-                // --- ИЗМЕНЕНИЕ: Вставляем *перед* триггером (ВНУТРИ ленты) ---
                 $placeholder.insertBefore($trigger);
             }
 
             lastPlaceholderId = placeholderId; // Запоминаем ID *последнего*
             widgetsMap[widgetName] = 1;
         }
-        return { widgetsMap, lastPlaceholderId };
+        return {widgetsMap, lastPlaceholderId};
     }
 
     /**
@@ -185,9 +215,10 @@ $(document).ready(function () {
             const $placeholder = $(`#${placeholderId}`);
 
             if ($placeholder.length && teaser) {
+                const finalTrackingUrl = buildTrackingUrl(teaser.url, widgetName);
                 const $teaserHTML = $(`
                     <div class="teaser-widget" data-teaser-id="${teaser.id}">
-                        <a href="${teaser.url}" class="teaser-link">
+                        <a href="${finalTrackingUrl}" class="teaser-link">
                             <div class="teaser-image-wrapper">
                                 <img src="${teaser.image}" alt="${teaser.title}" class="teaser-image" onerror="this.style.display='none'">
                             </div>
@@ -201,8 +232,6 @@ $(document).ready(function () {
                 // Заменяем плейсхолдер
                 $placeholder.replaceWith($teaserHTML);
 
-                // --- ИЗМЕНЕНИЕ: Ищем элемент по ID ---
-                // (Используем $teaserHTML[0], так как $feed.find() был ненадежен)
                 const newTeaserElement = $teaserHTML[0];
                 if (newTeaserElement) {
                     // Наблюдаем за тизером (только для seenIds)
@@ -221,22 +250,19 @@ $(document).ready(function () {
      * @param {number} page - Номер ряда (начиная с 0)
      */
     function fetchTeasers(page) {
-        // Проверяем лимит *до* того, как что-либо делать
         if (isLoading || page >= MAX_FEED_ROWS) {
             if (page >= MAX_FEED_ROWS) {
                 console.log(`Достигнут лимит ленты (${MAX_FEED_ROWS} рядов).`);
-                $trigger.hide(); // Прячем триггер, он больше не нужен
+                $trigger.hide();
             }
             return;
         }
 
         isLoading = true;
-        // --- ИЗМЕНЕНИЕ: Увеличиваем счетчик *здесь* ---
         currentPage++;
 
         const columns = getGridColumns();
-        // --- ИЗМЕНЕНИЕ: `page` - это *текущая* страница (которая 0) ---
-        const { widgetsMap, lastPlaceholderId } = createPlaceholders(page, columns);
+        const {widgetsMap, lastPlaceholderId} = createPlaceholders(page, columns);
 
         if (Object.keys(widgetsMap).length === 0) {
             isLoading = false;
@@ -271,8 +297,7 @@ $(document).ready(function () {
                 seen_ids_page: pageIds,
                 seen_ids_long_term: longTermIds,
 
-                // --- НОВОЕ ПОЛЕ: Передаем категорию ---
-                category: window.currentCategory // (будет null для главной)
+                category: window.currentCategory
             })
         })
         .then(response => {
@@ -293,32 +318,25 @@ $(document).ready(function () {
         })
         .catch(error => {
             console.error('Ошибка при загрузке тизеров:', error);
-             Object.keys(widgetsMap).forEach(widgetName => {
-                 $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
-             });
+            Object.keys(widgetsMap).forEach(widgetName => {
+                $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
+            });
         })
         .finally(() => {
             isLoading = false;
-            // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
-            // (Он сработает *после* isLoading = false)
             checkAndLoadMore();
         });
     }
 
-    // --- ИЗМЕНЕНИЕ: `checkAndLoadMore` ВОЗВРАЩАЕТСЯ ---
     /**
      * Проверяет, заполнена ли страница. Если нет - грузит еще.
      */
     function checkAndLoadMore() {
         if (isLoading) return;
 
-        // --- ИЗМЕНЕНИЕ: Используем триггер, а не высоту документа ---
-        // Это надежнее, если картинки еще не загрузились
         const triggerTop = $trigger[0].getBoundingClientRect().top;
         const windowHeight = $window.height();
 
-        // Если триггер *виден* (или над вьюпортом),
-        // а мы не достигли лимита
         if (triggerTop <= windowHeight && currentPage < MAX_FEED_ROWS) {
             console.log("Триггер виден, загружаем еще...");
             // `fetchTeasers` сам УВЕЛИЧИТ `currentPage`
@@ -326,14 +344,11 @@ $(document).ready(function () {
         }
     }
 
-    // --- ИЗМЕНЕНИЕ: Обработчик скролла ВОЗВРАЩАЕТСЯ ---
     /**
      * Обработчик "бесконечной" прокрутки
      */
     const throttledScrollHandler = throttle(() => {
-        // (высота окна + прокрутка) > (высота документа - "триггерная" зона)
         if ($window.scrollTop() + $window.height() > $(document).height() - 400) {
-            // `fetchTeasers` сам проверит лимит и isLoading
             fetchTeasers(currentPage);
         }
     }, 200); // Проверять не чаще, чем раз в 200 мс
@@ -349,12 +364,11 @@ $(document).ready(function () {
         resizeTimer = setTimeout(() => {
             console.log("Изменение размера, перезагрузка...");
             // Сбрасываем все
-            $feed.empty(); // Удаляем тизеры и плейсхолдеры
+            $feed.empty();
             currentPage = 0;
 
-            // --- ИЗМЕНЕНИЕ: Добавляем триггер обратно ---
             $feed.append($trigger);
-            $trigger.show(); // Показываем (на случай, если был скрыт)
+            $trigger.show();
 
             // Запускаем первую загрузку
             fetchTeasers(0);
