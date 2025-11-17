@@ -185,7 +185,7 @@ $(document).ready(function () {
         let lastPlaceholderId = null;
 
         for (let col = 0; col < columns; col++) {
-            const widgetName = `l${row.toString(16)}${col.toString(16)}`;
+            const widgetName = `l${col.toString(16)}${row.toString(16).padStart(2, '0')}`;
             const placeholderId = `widget-${widgetName}`;
 
             if ($(`#${placeholderId}`).length === 0) {
@@ -300,32 +300,32 @@ $(document).ready(function () {
                 category: window.currentCategory
             })
         })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.widgets) {
-                renderTeasers(data.widgets, lastPlaceholderId);
-            }
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.widgets) {
+                    renderTeasers(data.widgets, lastPlaceholderId);
+                }
 
-            if (data.newly_served_ids) {
-                updateLongTermSeenIds(data.newly_served_ids);
-                console.log(`Добавлено в cookie ${data.newly_served_ids.length} новых ID.`);
-            }
-        })
-        .catch(error => {
-            console.error('Ошибка при загрузке тизеров:', error);
-            Object.keys(widgetsMap).forEach(widgetName => {
-                $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
+                if (data.newly_served_ids) {
+                    updateLongTermSeenIds(data.newly_served_ids);
+                    console.log(`Добавлено в cookie ${data.newly_served_ids.length} новых ID.`);
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка при загрузке тизеров:', error);
+                Object.keys(widgetsMap).forEach(widgetName => {
+                    $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
+                });
+            })
+            .finally(() => {
+                isLoading = false;
+                checkAndLoadMore();
             });
-        })
-        .finally(() => {
-            isLoading = false;
-            checkAndLoadMore();
-        });
     }
 
     /**
