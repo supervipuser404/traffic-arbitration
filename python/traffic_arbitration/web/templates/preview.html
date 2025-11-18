@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    {{ article.title }} :: {{ config.company_name }}
+{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <link rel="stylesheet" href="/static/css/teaser_feed.css?v=6">
+{% endblock %}
+
+{% block content %}
+<main class="main-container">
+
+    <!--
+      ИЗМЕНЕНИЕ: Выносим заголовок в общий контейнер над колонками.
+      Это гарантирует, что картинка и сайдбар начнутся с одной высоты.
+    -->
+    <div class="preview-header">
+        <h1 class="preview-title-full">{{ article.title }}</h1>
+    </div>
+
+    <!-- БЛОК КОНТЕНТА (Картинка + Сайдбар) -->
+    <div class="preview-block">
+
+        <!-- Левая часть: Картинка-ссылка -->
+        <a href="/{{ category or 'news' }}/{{ article.slug }}/full" class="preview-main-link">
+
+            <div class="preview-image-container">
+                <!-- Размытый фон -->
+                <div class="preview-image-bg" style="background-image: url('{{ article.image.link if article.image else bg }}');"></div>
+
+                <!-- Основная картинка -->
+                <img src="{{ article.image.link if article.image else bg }}"
+                     alt="{{ article.title }}"
+                     class="preview-image-fg"
+                     onerror="this.style.display='none'">
+
+                <!-- Кнопка внутри картинки -->
+                <div class="preview-read-more-btn">Читать далее</div>
+            </div>
+
+            <!-- Текст анонса (показываем, только если включено в конфиге) -->
+            {% if config.show_preview_text %}
+            <p class="preview-text">{{ article.text[:200] }}...</p>
+            {% endif %}
+        </a>
+
+        <!-- Правая часть: Сайдбар с тизерами -->
+        <div class="preview-sidebar">
+            <!--
+               УДАЛЕНО: sidebar-spacer больше не нужен,
+               так как заголовок вынесен наверх.
+            -->
+
+            <!-- Контейнер, куда JS загрузит виджеты s00-s04 -->
+            <div id="preview-sidebar-content"></div>
+        </div>
+
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
+
+    <!-- ЛЕНТА ВНИЗУ -->
+    <div id="teaser-feed" class="feed-container">
+        <!-- JS заполнит это -->
+    </div>
+
+</main>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        // Передаем категорию для фильтрации ленты
+        window.currentCategory = {{ category | tojson | safe }};
+    </script>
+    <script src="/static/js/teaser_feed.js"></script>
+{% endblock %}

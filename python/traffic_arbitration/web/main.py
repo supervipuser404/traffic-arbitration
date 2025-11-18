@@ -13,10 +13,9 @@ from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
 from traffic_arbitration.common.config import config
 from traffic_arbitration.models import Article, ArticlePreview as ArticlePreviewDB
-from traffic_arbitration.db.queries import get_article_by_slug_and_category
+from traffic_arbitration.db.queries import get_article_by_slug_and_category, get_article_by_slug
 from .utils import insert_teasers
 from .cache import news_cache
-# Обновляем импорты сервисов
 from .services import NewsRanker, TeaserService
 from .schemas import (
     ArticlePreviewSchema,
@@ -30,7 +29,8 @@ BASE_DIR = Path(__file__).resolve().parent
 web_config = dict(
     company_name=config.get("company_name", "WhatTheFuck"),
     company_short_name=config.get("company_short_name", "WTF"),
-    static=config.get("static", BASE_DIR / "static")
+    static=config.get("static", BASE_DIR / "static"),
+    show_preview_text=config.get("show_preview_text", False)
 )
 
 
@@ -42,8 +42,6 @@ def template_context(request: Request) -> dict:
 
 
 # --- Управление состоянием приложения ---
-# Создадим класс для хранения глобальных, но управляемых ресурсов,
-# таких как SSH-туннель и движок БД.
 class AppState:
     ssh_server: SSHTunnelForwarder | None = None
     db_engine: any = None
@@ -173,6 +171,30 @@ async def read_category(request: Request, category: str):
     return templates.TemplateResponse("index.html", context)
 
 
+@app.get("/preview/{slug}", response_class=HTMLResponse)
+async def read_preview(request: Request, slug: str, db: Session = Depends(get_db)):
+    """
+    Страница анонса материала.
+    """
+    db_article = get_article_by_slug(db, slug)
+
+    if db_article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    context = template_context(request)
+
+    category = None
+    if db_article.categories:
+        category = db_article.categories[0].code
+
+    context.update({
+        "article": db_article,
+        "category": category,
+        "image_obj": db_article.image
+    })
+    return templates.TemplateResponse("preview.html", context)
+
+
 @app.get("/fcm.js")
 async def fcm_script(request: Request):
     return templates.TemplateResponse(
@@ -189,40 +211,6 @@ async def manifest(request: Request):
     )
 
 
-# API-эндпоинт, возвращающий данные новостей
-@app.post("/qaz.html", response_model=list[ArticlePreviewSchema])
-async def get_news(
-        request_str: str = Form(..., alias="request"),
-        b: str = Form(...),
-        after: int = Form(0),
-        db: Session = Depends(get_db)
-):
-    """
-    Возвращает список превью новостей на основе POST-запроса.
-    """
-    try:
-        # Просто парсим JSON, но пока не используем его для фильтрации
-        request_params = json.loads(request_str)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON in 'request' parameter")
-
-    # Устанавливаем лимит по умолчанию, так как он больше не передается
-    limit = 20
-    offset = after
-
-    # Запрашиваем из БД объекты SQLAlchemy
-    news_previews_db = (
-        db.query(ArticlePreviewDB)
-        .filter(ArticlePreviewDB.is_active == True)
-        .order_by(ArticlePreviewDB.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    # FastAPI автоматически преобразует список объектов SQLAlchemy
-    # в JSON, соответствующий схеме ArticlePreviewSchema,
-    # благодаря `from_attributes = True`.
-    return news_previews_db
 
 
 @app.post("/etc", response_model=TeaserResponseSchema)
