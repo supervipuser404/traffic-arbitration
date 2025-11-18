@@ -23,6 +23,7 @@ class CachedPreviewItem:
     preview_obj: ArticlePreview
     publication_date: Optional[datetime]
     category: Optional[str]
+    slug: Optional[str]
 
 
 class NewsCache:
@@ -81,7 +82,8 @@ class NewsCache:
                     ArticlePreview.is_active,
                     ArticlePreview.created_at,
                     Article.source_datetime.label("publication_date"),
-                    Category.code.label("category")
+                    Category.code.label("category"),
+                    Article.slug.label("slug")
                 )
                 .join(Article, ArticlePreview.article_id == Article.id)
                 .join(ArticleCategory, Article.id == ArticleCategory.article_id)
@@ -102,7 +104,8 @@ class NewsCache:
                 # 1. Отделяем "дополнительные" данные
                 extra_data = {
                     "publication_date": preview_data.get("publication_date"),
-                    "category": preview_data.get("category")
+                    "category": preview_data.get("category"),
+                    "slug": preview_data.get("slug")
                 }
 
                 # 2. Формируем словарь только с теми данными,
@@ -122,7 +125,8 @@ class NewsCache:
                     new_previews.append(CachedPreviewItem(
                         preview_obj=preview_obj,
                         publication_date=extra_data["publication_date"],
-                        category=extra_data["category"]
+                        category=extra_data["category"],
+                        slug=extra_data["slug"]
                     ))
 
                 except TypeError as e:

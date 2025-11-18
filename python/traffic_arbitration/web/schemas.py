@@ -57,13 +57,16 @@ class ArticlePreviewSchema(BaseSchema):
     image: Optional[str] = None  # URL изображения для превью
     is_active: bool
     created_at: datetime  # Дата создания полезна для сортировки на клиенте
+    slug: str
 
     @computed_field
     @property
     def url(self) -> str:
-        """Генерирует URL для полной статьи на основе article_id."""
-        # В будущем здесь можно будет добавить 'slug' для SEO-дружественных URL
-        return f"/articles/{self.article_id}"
+        """
+        Генерирует URL для страницы анонса на основе slug.
+        """
+        # --- ИЗМЕНЕНИЕ: Используем self.slug ---
+        return f"/preview/{self.slug}"
 
     @computed_field
     @property
