@@ -315,7 +315,6 @@ def download_missing_images_in_batches(session: Session):
     max_workers = config.get("images_download_workers", 5)
     batch_size = config.get("images_download_batch_size", 20)
 
-    # Загружаем только id и link
     contents = session.execute(
         select(VisualContent.id, VisualContent.link)
         .filter(VisualContent.data.is_(None), VisualContent.link.isnot(None))
@@ -377,7 +376,6 @@ def _update_visual_content_batch(session: Session, items: List[Tuple[int, bytes,
     if not items:
         return
 
-    # Собираем данные для обновления
     values = [
         {
             "id": vc_id,
@@ -390,7 +388,6 @@ def _update_visual_content_batch(session: Session, items: List[Tuple[int, bytes,
         for vc_id, content, ext, width, height in items
     ]
 
-    # Пакетное обновление с отключением синхронизации сессии
     session.execute(
         update(VisualContent)
         .where(VisualContent.id.in_([v["id"] for v in values]))
@@ -402,7 +399,7 @@ def _update_visual_content_batch(session: Session, items: List[Tuple[int, bytes,
             updated_at=bindparam("updated_at")
         ),
         values,
-        execution_options={"synchronize_session": None}  # Отключаем синхронизацию
+        execution_options={"synchronize_session": None}
     )
 
 
@@ -422,10 +419,7 @@ def get_unprocessed_article_links_for_source(session: Session, source_id: int) -
         .filter_by(source_id=source_id, is_processed=False)
     ).scalars().all()
 
-    # Приводим к list, если тип не соответствует, из-за аннотации Sequence[_R] в SQLAlchemy,
-    # которая вызывает предупреждение в статическом анализаторе PyCharm/Pyright
     links = result if isinstance(result, list) else list(result)
-
     return links
 
 
@@ -443,12 +437,10 @@ def upsert_external_articles_batch(session: Session, source_id: int, articles: L
     if not articles:
         return
 
-    # Собираем все link
     links = [art.get("link") for art in articles if art.get("link")]
     if not links:
         return
 
-    # Загружаем link_id для всех ссылок
     link_objs = session.execute(
         select(ExternalArticleLink.link, ExternalArticleLink.id)
         .filter_by(source_id=source_id)
@@ -456,14 +448,12 @@ def upsert_external_articles_batch(session: Session, source_id: int, articles: L
     ).all()
     link_id_map = {row.link: row.id for row in link_objs}
 
-    # Загружаем существующие статьи
     link_ids = list(link_id_map.values())
     existing_articles = session.execute(
         select(ExternalArticle.link_id).filter(ExternalArticle.link_id.in_(link_ids))
     ).scalars().all()
     existing_set = set(existing_articles)
 
-    # Собираем новые статьи
     current_time = datetime.now(timezone.utc)
     new_articles = []
     for art in articles:
@@ -482,7 +472,6 @@ def upsert_external_articles_batch(session: Session, source_id: int, articles: L
                 "is_processed": False
             })
 
-    # Пакетная вставка
     for i in range(0, len(new_articles), batch_size):
         batch = new_articles[i:i + batch_size]
         session.execute(
@@ -537,6 +526,19 @@ def get_article_by_slug_and_category(session: Session, article_slug: str, catego
         .join(ArticleCategory, Article.id == ArticleCategory.article_id)
         .join(Category, ArticleCategory.category_id == Category.id)
         .where(Article.slug == article_slug, Category.code == category_code, Article.is_active == True)
+    )
+    result = session.execute(stmt).scalar_one_or_none()
+    return result
+
+
+def get_article_by_slug(session: Session, article_slug: str) -> Optional[Article]:
+    """
+    Возвращает статью по ее slug (без категории).
+    Используется для страницы /preview/{slug}.
+    """
+    stmt = (
+        select(Article)
+        .where(Article.slug == article_slug, Article.is_active == True)
     )
     result = session.execute(stmt).scalar_one_or_none()
     return result

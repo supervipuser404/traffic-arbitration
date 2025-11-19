@@ -1,10 +1,11 @@
 /*
-  Глобальная логика для рендеринга "бесконечной" ленты тизеров.
+  Глобальная логика для рендеринга "бесконечной" ленты тизеров + сайдбара.
+  Выполняет единый запрос при инициализации.
   Ожидает, что JQuery ($) уже загружен.
   Ожидает, что в `window` определена переменная `currentCategory` (может быть null).
 */
 
-// --- Управление состоянием ---
+// --- Управление состоянием (Cookie, Observer) ---
 // 1. Управление Cookie для "долгосрочных" просмотров
 const LONG_TERM_COOKIE_NAME = 'ta_seen_ids';
 const MAX_COOKIE_IDS = 200; // Храним 200 последних ID
@@ -19,9 +20,7 @@ function getLongTermSeenIds() {
             .split('; ')
             .find(row => row.startsWith(LONG_TERM_COOKIE_NAME + '='));
 
-        if (!cookieValue) {
-            return [];
-        }
+        if (!cookieValue) return [];
         const jsonString = decodeURIComponent(cookieValue.split('=')[1]);
         return JSON.parse(jsonString) || [];
     } catch (e) {
@@ -35,27 +34,18 @@ function getLongTermSeenIds() {
  * @param {number[]} newIds - Массив ID, которые *только что* показал сервер.
  */
 function updateLongTermSeenIds(newIds) {
-    if (!newIds || newIds.length === 0) {
-        return;
-    }
-
+    if (!newIds || newIds.length === 0) return;
     try {
         const currentIds = getLongTermSeenIds();
-        // Используем Set для автоматической дедупликации
         const idSet = new Set(currentIds);
         newIds.forEach(id => idSet.add(id));
-
-        // Превращаем обратно в массив и обрезаем "старые"
         let updatedIds = Array.from(idSet);
         if (updatedIds.length > MAX_COOKIE_IDS) {
-            // Убираем самые старые ID, которые были в начале
             updatedIds = updatedIds.slice(updatedIds.length - MAX_COOKIE_IDS);
         }
-
         const jsonString = JSON.stringify(updatedIds);
         const expirationDate = new Date();
-        expirationDate.setFullYear(expirationDate.getFullYear() + 1); // Храним 1 год
-
+        expirationDate.setFullYear(expirationDate.getFullYear() + 1);
         document.cookie = `${LONG_TERM_COOKIE_NAME}=${encodeURIComponent(jsonString)}; expires=${expirationDate.toUTCString()}; path=/; SameSite=Lax`;
     } catch (e) {
         console.error("Error writing seen_ids cookie:", e);
@@ -70,21 +60,13 @@ const seenIdsOnPage = new Set();
 // 3. Intersection Observer
 const observerCallback = (entries, observer) => {
     entries.forEach(entry => {
-        // Элемент не виден, ничего не делаем
-        if (!entry.isIntersecting) {
-            return;
-        }
+        if (!entry.isIntersecting) return;
 
         const targetElement = entry.target;
         const teaserId = parseInt(targetElement.dataset.teaserId, 10);
 
-        // --- Задача 1: Это ТИЗЕР (у него есть data-teaser-id) ---
-        // Отслеживаем просмотр для дедупликации
         if (teaserId && !seenIdsOnPage.has(teaserId)) {
-            // Добавляем в краткосрочный кэш
             seenIdsOnPage.add(teaserId);
-            // Мы отписываемся от этого элемента,
-            // так как его просмотр засчитан
             observer.unobserve(targetElement);
         }
     });
@@ -124,9 +106,7 @@ function buildTrackingUrl(backendUrlString, widgetName) {
         // (Используем pathname от бэка, а query - собранный)
         const finalUrl = new URL(backendUrl.pathname, window.location.origin);
         finalUrl.search = finalParams.toString();
-
         return finalUrl.href;
-
     } catch (e) {
         console.error("Ошибка при построении URL:", e);
         // Фолбэк на оригинальный URL, если что-то пошло не так
@@ -134,250 +114,318 @@ function buildTrackingUrl(backendUrlString, widgetName) {
     }
 }
 
-// --- Конец новой функции ---
+// --- УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ЗАПРОСА ---
+function requestTeasersAPI(widgetsMap, category) {
+    const longTermIds = getLongTermSeenIds();
+    const pageIds = Array.from(seenIdsOnPage);
+    const uid = 'placeholder-uid-' + (localStorage.getItem('my_uid') || 'new');
 
-
-$(document).ready(function () {
-    const $feed = $('#teaser-feed');
-    if (!$feed.length) return;
-
-    const $trigger = $('<div id="feed-load-trigger-dynamic"></div>');
-    $trigger.css({height: '1px', width: '100%'});
-    $feed.append($trigger);
-
-    let isLoading = false;
-    let currentPage = 0; // "Страница" (ряд) ленты
-    const $window = $(window);
-
-    // Лимит рядов в "бесконечной" ленте
-    const MAX_FEED_ROWS = 100;
-
-    function throttle(func, limit) {
-        let inThrottle;
-        return function () {
-            const args = arguments;
-            const context = this;
-            if (!inThrottle) {
-                func.apply(context, args);
-                inThrottle = true;
-                setTimeout(() => inThrottle = false, limit);
+    return fetch('/etc', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+            uid: uid,
+            ip: '1.1.1.1',
+            ua: navigator.userAgent,
+            url: window.location.href,
+            loc: navigator.language || 'ru',
+            w: $(window).width(),
+            h: $(window).height(),
+            widgets: widgetsMap,
+            seen_ids_page: pageIds,
+            seen_ids_long_term: longTermIds,
+            category: category
+        })
+    })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.newly_served_ids) {
+                updateLongTermSeenIds(data.newly_served_ids);
             }
+            return data.widgets || {};
+        });
+}
+
+// --- УТИЛИТА РЕНДЕРИНГА ---
+function renderWidget(widgetName, teaser, htmlBuilder) {
+    const $placeholder = $(`#widget-${widgetName}`);
+
+    if ($placeholder.length && teaser) {
+        const trackUrl = buildTrackingUrl(teaser.url, widgetName);
+        const html = htmlBuilder(teaser, trackUrl);
+        const $element = $(html);
+
+        $placeholder.replaceWith($element);
+
+        // Наблюдение
+        const teaserId = $element.attr('data-teaser-id');
+        if (teaserId) {
+            intersectionObserver.observe($element[0]);
+        } else {
+            const inner = $element.find(`[data-teaser-id="${teaser.id}"]`)[0];
+            if (inner) intersectionObserver.observe(inner);
+        }
+
+    } else if ($placeholder.length) {
+        $placeholder.text('Нет данных').addClass('empty');
+    }
+}
+
+// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ХЕЛПЕРЫ ЛЕНТЫ ---
+const $feed = $('#teaser-feed');
+const $trigger = $('<div id="feed-load-trigger-dynamic"></div>');
+$trigger.css({height: '1px', width: '100%'});
+
+let isFeedLoading = false;
+// currentFeedPage теперь указывает на ПОСЛЕДНИЙ загруженный ряд.
+// При старте -1, т.к. еще ничего не загружено.
+let currentFeedPage = -1;
+const MAX_FEED_ROWS = 100;
+
+function getGridColumns() {
+    if (!$feed.length) return 1;
+    const columns = $feed.css('--feed-columns');
+    return parseInt(columns, 10) || 1;
+}
+
+// --- НОВОЕ: Расчет количества рядов для заполнения экрана ---
+function estimateRowsToFillScreen() {
+    const cols = getGridColumns();
+    const containerWidth = $feed.width() || $(window).width();
+    const gap = 20;
+    // Примерная ширина карточки
+    const cardWidth = (containerWidth - (gap * (cols - 1))) / cols;
+    // Примерная высота: картинка (16:9) + текст (~160px с отступами)
+    const estimatedCardHeight = (cardWidth * 0.5625) + 160;
+
+    const screenHeight = $(window).height();
+
+    // Сколько рядов влезет + 1 запасной
+    const rows = Math.ceil(screenHeight / estimatedCardHeight) + 1;
+
+    // Ограничим разумным минимумом (1) и максимумом (например, 5),
+    // чтобы не грузить слишком много при ошибке расчета.
+    return Math.max(1, Math.min(rows, 5));
+}
+
+function createFeedPlaceholders(row, columns) {
+    const widgetsMap = {};
+    if (!$feed.length) return widgetsMap;
+
+    for (let col = 0; col < columns; col++) {
+        // Формат: l[1-char COL][2-char ROW]
+        // Пример: l000, l100, l001
+        const widgetName = `l${col.toString(16)}${row.toString(16).padStart(2, '0')}`;
+        const placeholderId = `widget-${widgetName}`;
+
+        if ($(`#${placeholderId}`).length === 0) {
+            const $placeholder = $('<div></div>')
+                .attr('id', placeholderId)
+                .addClass('teaser-widget-placeholder')
+                .text(`...`);
+
+            $placeholder.insertBefore($trigger);
+        }
+        widgetsMap[widgetName] = 1;
+    }
+    return widgetsMap;
+}
+
+// Функция для догрузки ленты (скролл или инициализация пачки)
+// count - сколько линий загрузить (по умолчанию 1)
+function fetchFeedNextPage(count = 1) {
+    if (isFeedLoading || currentFeedPage >= MAX_FEED_ROWS - 1) {
+        if (currentFeedPage >= MAX_FEED_ROWS - 1) $trigger.hide();
+        return;
+    }
+
+    isFeedLoading = true;
+    const columns = getGridColumns();
+    const widgetsMap = {};
+
+    // Генерируем плейсхолдеры для `count` следующих рядов
+    for (let i = 1; i <= count; i++) {
+        const targetRow = currentFeedPage + i;
+        if (targetRow < MAX_FEED_ROWS) {
+            Object.assign(widgetsMap, createFeedPlaceholders(targetRow, columns));
         }
     }
 
-    /**
-     * Определяет, сколько колонок сейчас на экране
-     * @returns {number}
-     */
-    function getGridColumns() {
-        const columns = $feed.css('--feed-columns');
-        return parseInt(columns, 10) || 1;
+    // Обновляем счетчик страниц
+    currentFeedPage += count;
+
+    if (Object.keys(widgetsMap).length === 0) {
+        isFeedLoading = false;
+        return;
     }
 
-    /**
-     * Создает плейсхолдеры для тизеров в DOM
-     * @param {number} row - Номер ряда
-     * @param {number} columns - Количество колонок
-     * @returns {{widgetsMap: Object, lastPlaceholderId: string|null}}
-     */
-    function createPlaceholders(row, columns) {
-        const widgetsMap = {};
-        let lastPlaceholderId = null;
-
-        for (let col = 0; col < columns; col++) {
-            const widgetName = `l${col.toString(16)}${row.toString(16).padStart(2, '0')}`;
-            const placeholderId = `widget-${widgetName}`;
-
-            if ($(`#${placeholderId}`).length === 0) {
-                const $placeholder = $('<div></div>')
-                    .attr('id', placeholderId)
-                    .addClass('teaser-widget-placeholder')
-                    .text(`Загрузка ${widgetName}...`);
-
-                $placeholder.insertBefore($trigger);
-            }
-
-            lastPlaceholderId = placeholderId; // Запоминаем ID *последнего*
-            widgetsMap[widgetName] = 1;
-        }
-        return {widgetsMap, lastPlaceholderId};
-    }
-
-    /**
-     * Рендерит полученные тизеры в плейсхолдеры
-     * @param {Object} widgets - Карта { "l<row><col>": { ...teaser_data } }
-     * @param {string|null} lastPlaceholderId - ID элемента, который будет триггером
-     */
-    function renderTeasers(widgets, lastPlaceholderId) {
-        for (const widgetName in widgets) {
-            const teaser = widgets[widgetName];
-            const placeholderId = `widget-${widgetName}`;
-            const $placeholder = $(`#${placeholderId}`);
-
-            if ($placeholder.length && teaser) {
-                const finalTrackingUrl = buildTrackingUrl(teaser.url, widgetName);
-                const $teaserHTML = $(`
-                    <div class="teaser-widget" data-teaser-id="${teaser.id}">
-                        <a href="${finalTrackingUrl}" class="teaser-link">
+    requestTeasersAPI(widgetsMap, window.currentCategory)
+        .then(widgets => {
+            for (const wName in widgetsMap) {
+                renderWidget(wName, widgets[wName], (t, url) => `
+                    <div class="teaser-widget" data-teaser-id="${t.id}">
+                        <a href="${url}" class="teaser-link">
                             <div class="teaser-image-wrapper">
-                                <img src="${teaser.image}" alt="${teaser.title}" class="teaser-image" onerror="this.style.display='none'">
+                                <img src="${t.image}" alt="${t.title}" class="teaser-image" onerror="this.style.display='none'">
                             </div>
                             <div class="teaser-content">
-                                <h3 class="teaser-title">${teaser.title}</h3>
+                                <h3 class="teaser-title">${t.title}</h3>
                             </div>
                         </a>
                     </div>
                 `);
-
-                // Заменяем плейсхолдер
-                $placeholder.replaceWith($teaserHTML);
-
-                const newTeaserElement = $teaserHTML[0];
-                if (newTeaserElement) {
-                    // Наблюдаем за тизером (только для seenIds)
-                    intersectionObserver.observe(newTeaserElement);
-                }
-
-            } else if ($placeholder.length) {
-                $placeholder.text('Нет данных');
-                $placeholder.addClass('empty');
             }
+        })
+        .catch(e => {
+            console.error('Feed scroll load error:', e);
+            Object.keys(widgetsMap).forEach(w => $(`#widget-${w}`).text('Error').addClass('empty'));
+        })
+        .finally(() => {
+            isFeedLoading = false;
+            checkAndLoadMore();
+        });
+}
+
+function checkAndLoadMore() {
+    if (isFeedLoading || !$feed.length) return;
+    if ($trigger[0].getBoundingClientRect().top <= $(window).height() && currentFeedPage < MAX_FEED_ROWS) {
+        fetchFeedNextPage(1);
+    }
+}
+
+// --- ИНИЦИАЛИЗАЦИЯ ---
+$(document).ready(function () {
+
+    // 1. Сбор виджетов для ЕДИНОГО запроса
+    const initialWidgetsMap = {};
+
+    // --- Сайдбар (если есть) ---
+    const $sidebarContainer = $('#preview-sidebar-content');
+    if ($sidebarContainer.length && $sidebarContainer.is(':visible')) {
+        for (let i = 0; i < 5; i++) {
+            // --- ИЗМЕНЕНИЕ: Нейминг сайдбара приведен к стандарту 4 символа ---
+            // Формат: s[1-char COL][2-char ROW]
+            // Для сайдбара колонка всегда 0.
+            // Было: s00, s01... (3 chars)
+            // Стало: s000, s001... (4 chars)
+            const rowHex = i.toString(16).padStart(2, '0');
+            const wName = `s0${rowHex}`;
+            // --- Конец изменения ---
+
+            initialWidgetsMap[wName] = 1;
+            $sidebarContainer.append(`
+                <div id="widget-${wName}" class="sidebar-widget-placeholder" style="height: 80px; background: #f9f9f9; margin-bottom:10px; border-radius:6px;"></div>
+            `);
         }
     }
 
-    /**
-     * Главная функция: запрашивает тизеры для N-го ряда
-     * @param {number} page - Номер ряда (начиная с 0)
-     */
-    function fetchTeasers(page) {
-        if (isLoading || page >= MAX_FEED_ROWS) {
-            if (page >= MAX_FEED_ROWS) {
-                console.log(`Достигнут лимит ленты (${MAX_FEED_ROWS} рядов).`);
-                $trigger.hide();
-            }
-            return;
-        }
+    // --- Лента (Первый экран) ---
+    if ($feed.length) {
+        $feed.append($trigger);
 
-        isLoading = true;
-        currentPage++;
+        // Расчет количества рядов для первого экрана
+        const initialRows = estimateRowsToFillScreen();
+        console.log(`Расчет: нужно ${initialRows} рядов для заполнения экрана.`);
 
         const columns = getGridColumns();
-        const {widgetsMap, lastPlaceholderId} = createPlaceholders(page, columns);
 
-        if (Object.keys(widgetsMap).length === 0) {
-            isLoading = false;
-            return;
+        // Генерируем плейсхолдеры для всех начальных рядов
+        for (let r = 0; r < initialRows; r++) {
+            Object.assign(initialWidgetsMap, createFeedPlaceholders(r, columns));
         }
 
-        const longTermIds = getLongTermSeenIds();
-        const pageIds = Array.from(seenIdsOnPage);
+        // Устанавливаем индекс последнего загруженного ряда
+        currentFeedPage = initialRows - 1;
+    }
 
-        const uid = 'placeholder-uid-' + (localStorage.getItem('my_uid') || 'new');
+    // 2. Выполняем ЕДИНЫЙ запрос (если есть что запрашивать)
+    if (Object.keys(initialWidgetsMap).length > 0) {
+        requestTeasersAPI(initialWidgetsMap, window.currentCategory)
+            .then(widgets => {
+                // Рендеринг всего, что пришло
+                for (const wName in widgets) {
+                    const t = widgets[wName];
 
-        console.log(`Запрос для ряда ${page}. Колонки: ${columns}.`);
-        console.log(`Отправка seen_ids_page: [${pageIds.join(', ')}]`);
-        console.log(`Отправка seen_ids_long_term: [${longTermIds.join(', ')}]`);
-
-        fetch('/etc', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-                uid: uid,
-                ip: '1.1.1.1', // Заглушка, сервер должен сам определять
-                ua: navigator.userAgent,
-                url: window.location.href,
-                loc: navigator.language || 'ru',
-                w: $window.width(),
-                h: $window.height(),
-                widgets: widgetsMap,
-
-                seen_ids_page: pageIds,
-                seen_ids_long_term: longTermIds,
-
-                category: window.currentCategory
-            })
-        })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.widgets) {
-                    renderTeasers(data.widgets, lastPlaceholderId);
-                }
-
-                if (data.newly_served_ids) {
-                    updateLongTermSeenIds(data.newly_served_ids);
-                    console.log(`Добавлено в cookie ${data.newly_served_ids.length} новых ID.`);
+                    if (wName.startsWith('s')) {
+                        // Сайдбар
+                        renderWidget(wName, t, (teaser, url) => `
+                            <a href="${url}" class="sidebar-widget" data-teaser-id="${teaser.id}">
+                                <img src="${teaser.image}" class="sidebar-image" alt="">
+                                <div class="sidebar-content">
+                                    <h4 class="sidebar-title">${teaser.title}</h4>
+                                </div>
+                            </a>
+                        `);
+                    } else if (wName.startsWith('l')) {
+                        // Лента
+                        renderWidget(wName, t, (teaser, url) => `
+                            <div class="teaser-widget" data-teaser-id="${teaser.id}">
+                                <a href="${url}" class="teaser-link">
+                                    <div class="teaser-image-wrapper">
+                                        <img src="${teaser.image}" alt="${teaser.title}" class="teaser-image" onerror="this.style.display='none'">
+                                    </div>
+                                    <div class="teaser-content">
+                                        <h3 class="teaser-title">${teaser.title}</h3>
+                                    </div>
+                                </a>
+                            </div>
+                        `);
+                    }
                 }
             })
-            .catch(error => {
-                console.error('Ошибка при загрузке тизеров:', error);
-                Object.keys(widgetsMap).forEach(widgetName => {
-                    $(`#widget-${widgetName}`).text('Ошибка').addClass('empty');
-                });
-            })
+            .catch(e => console.error("Initial load error:", e))
             .finally(() => {
-                isLoading = false;
+                // После инициализации запускаем проверку скролла для ленты
                 checkAndLoadMore();
             });
     }
 
-    /**
-     * Проверяет, заполнена ли страница. Если нет - грузит еще.
-     */
-    function checkAndLoadMore() {
-        if (isLoading) return;
+    // --- Обработчики событий ---
 
-        const triggerTop = $trigger[0].getBoundingClientRect().top;
-        const windowHeight = $window.height();
-
-        if (triggerTop <= windowHeight && currentPage < MAX_FEED_ROWS) {
-            console.log("Триггер виден, загружаем еще...");
-            // `fetchTeasers` сам УВЕЛИЧИТ `currentPage`
-            fetchTeasers(currentPage);
+    let inThrottle;
+    $(window).on('scroll', () => {
+        if (!inThrottle) {
+            // Триггерим только догрузку ленты
+            if ($feed.length && $(window).scrollTop() + $(window).height() > $(document).height() - 400) {
+                fetchFeedNextPage(1);
+            }
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, 200);
         }
-    }
-
-    /**
-     * Обработчик "бесконечной" прокрутки
-     */
-    const throttledScrollHandler = throttle(() => {
-        if ($window.scrollTop() + $window.height() > $(document).height() - 400) {
-            fetchTeasers(currentPage);
-        }
-    }, 200); // Проверять не чаще, чем раз в 200 мс
-
-    $window.on('scroll', throttledScrollHandler);
+    });
 
     /**
      * Обработчик изменения размера окна (для адаптивности)
      */
     let resizeTimer;
-    const debouncedResizeHandler = () => {
+    $(window).on('resize', () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
-            console.log("Изменение размера, перезагрузка...");
-            // Сбрасываем все
-            $feed.empty();
-            currentPage = 0;
+            if ($feed.length) {
+                $feed.empty();
+                $feed.append($trigger);
+                $trigger.show();
 
-            $feed.append($trigger);
-            $trigger.show();
+                // Пересчитываем для новой высоты/ширины
+                const rows = estimateRowsToFillScreen();
+                currentFeedPage = rows - 1; // Устанавливаем базу
 
-            // Запускаем первую загрузку
-            fetchTeasers(0);
-        }, 300); // 300 мс "успокоения"
-    };
+                // Тут делаем отдельный запрос на перезагрузку ленты
+                currentFeedPage = -1;
+                fetchFeedNextPage(rows);
 
-    $window.on('resize', debouncedResizeHandler);
-
-    // --- Первоначальная загрузка ---
-    // (Загружаем первый ряд)
-    fetchTeasers(0);
+                if ($('#preview-sidebar-content').is(':visible') && $('#preview-sidebar-content').children().length === 0) {
+                    // Перезагрузка сайдбара, если он был скрыт, а стал виден
+                    // (Внимание: это создаст повторную логику, если не вынести loadSidebarTeasers)
+                    // Но для простоты пока так, или лучше перезагрузить страницу полностью.
+                }
+            }
+        }, 300);
+    });
 });
