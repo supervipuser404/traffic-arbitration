@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from traffic_arbitration.common.config import config
 from traffic_arbitration.models import Article, ArticlePreview as ArticlePreviewDB
 from traffic_arbitration.db.queries import get_article_by_slug_and_category, get_article_by_slug
-from .utils import insert_teasers
+from .utils import insert_teasers, inject_in_article_teasers
 from .cache import news_cache
 from .services import NewsRanker, TeaserService
 from .schemas import (
@@ -51,7 +51,7 @@ class AppState:
 app_state = AppState()
 
 
-# --- Lifespan Manager: Управление ресурсами при старте и остановке ---
+# --- Lifespan Manager ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -130,7 +130,6 @@ news_ranker = NewsRanker(cache=news_cache)
 # Создаем сервис тизеров, передавая ему ранжировщик как зависимость
 teaser_service = TeaserService(news_ranker=news_ranker)
 
-
 # Подключаем статику: здесь файлы CSS, JS, изображения и т.п.
 app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
 
@@ -138,7 +137,6 @@ app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
-# --- Эффективная зависимость для получения сессии БД ---
 def get_db():
     """
     Эта зависимость быстро создает сессию из единого, уже настроенного
@@ -146,7 +144,6 @@ def get_db():
     """
     if not app_state.SessionLocal:
         raise RuntimeError("Фабрика сессий БД не инициализирована. Проверьте lifespan.")
-
     db = app_state.SessionLocal()
     try:
         yield db
@@ -154,7 +151,8 @@ def get_db():
         db.close()
 
 
-# Основной маршрут для главной страницы
+# --- Маршруты ---
+
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request, category: Optional[str] = None):
     # 'category' здесь None
@@ -177,15 +175,11 @@ async def read_preview(request: Request, slug: str, db: Session = Depends(get_db
     Страница анонса материала.
     """
     db_article = get_article_by_slug(db, slug)
-
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
     context = template_context(request)
-
-    category = None
-    if db_article.categories:
-        category = db_article.categories[0].code
+    category = db_article.categories[0].code if db_article.categories else None
 
     context.update({
         "article": db_article,
@@ -193,6 +187,35 @@ async def read_preview(request: Request, slug: str, db: Session = Depends(get_db
         "image_obj": db_article.image
     })
     return templates.TemplateResponse("preview.html", context)
+
+
+# --- НОВЫЙ РОУТ ДЛЯ СТАТЬИ ---
+@app.get("/article/{slug}", response_class=HTMLResponse)
+async def read_article_page(request: Request, slug: str, db: Session = Depends(get_db)):
+    """
+    Полная страница статьи.
+    Текст статьи обрабатывается для вставки тизеров.
+    """
+    db_article = get_article_by_slug(db, slug)
+    if db_article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Внедряем плейсхолдеры тизеров в текст
+    processed_content = inject_in_article_teasers(db_article.text)
+
+    # Создаем копию, чтобы не мутировать объект сессии (хотя мы только читаем)
+    # Но лучше использовать поле context, чтобы не трогать объект БД
+
+    context = template_context(request)
+    category = db_article.categories[0].code if db_article.categories else None
+
+    context.update({
+        "article": db_article,
+        "article_content_with_teasers": processed_content,  # Передаем обработанный текст отдельно
+        "category": category,
+        "image_obj": db_article.image
+    })
+    return templates.TemplateResponse("article_page.html", context)
 
 
 @app.get("/fcm.js")
@@ -239,40 +262,6 @@ async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     return response_data
 
 
-@app.get("/{category}/{article_slug}", response_class=HTMLResponse)
-def read_article_preview(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
-    db_article = get_article_by_slug_and_category(db, article_slug, category)
-    if db_article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
-
-    context = template_context(request)
-    context.update({
-        "article": db_article,
-        "bg": "https://example.com/background.jpg"  # Заглушка для URL
-    })
-    return templates.TemplateResponse("article.html", context)
-
-
-@app.get("/{category}/{article_slug}/full", response_class=HTMLResponse)
-def read_article_full(request: Request, category: str, article_slug: str, db: Session = Depends(get_db)):
-    db_article = get_article_by_slug_and_category(db, article_slug, category)
-    if db_article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
-
-    # Обрабатываем контент статьи для вставки тизеров
-    processed_content = insert_teasers(db_article.content)
-
-    # Создаем копию объекта статьи, чтобы не изменять исходные данные из БД
-    from copy import copy
-    article_with_teasers = copy(db_article)
-    article_with_teasers.content = processed_content
-
-    context = template_context(request)
-    context.update({
-        "article": article_with_teasers,
-        "bg": "https://example.com/background.jpg"  # Заглушка для URL
-    })
-    return templates.TemplateResponse("article_full.html", context)
 
 
 if __name__ == "__main__":
