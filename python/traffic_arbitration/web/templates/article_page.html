@@ -6,21 +6,22 @@
 
 {% block head %}
     {{ super() }}
-    <link rel="stylesheet" href="/static/css/teaser_feed.css?v=8">
+    <link rel="stylesheet" href="/static/css/teaser_feed.css?v=7">
 {% endblock %}
 
 {% block content %}
 <main class="main-container">
 
-    <!-- Заголовок вынесен наверх -->
+    <!-- Заголовок -->
     <div class="preview-header">
         <h1 class="preview-title-full">{{ article.title }}</h1>
     </div>
 
-    <!-- БЛОК КОНТЕНТА (Картинка + Сайдбар) -->
+    <!-- БЛОК КОНТЕНТА (Статья + Сайдбар) -->
     <div class="preview-block">
 
-        <a href="/article/{{ article.slug }}" class="preview-main-link">
+        <!-- Левая часть: Статья -->
+        <div class="preview-main-link article-content-wrapper">
 
             <div class="preview-image-container">
                 <!-- Размытый фон -->
@@ -31,21 +32,29 @@
                      alt="{{ article.title }}"
                      class="preview-image-fg"
                      onerror="this.style.display='none'">
-
-                <!-- Кнопка внутри картинки -->
-                <div class="preview-read-more-btn">Читать далее</div>
             </div>
 
-            <!-- Текст анонса (показываем, только если включено в конфиге) -->
-            {% if config.show_preview_text %}
-            <p class="preview-text">{{ article.text[:200] }}...</p>
-            {% endif %}
-        </a>
+            <!-- ТЕКСТ СТАТЬИ С ТИЗЕРАМИ -->
+            <div class="article-text-body">
+                <!-- Используем processed content, переданный из main.py -->
+                {{ article_content_with_teasers | safe }}
+            </div>
 
-        <!-- Правая часть: Сайдбар с тизерами -->
+        </div>
+
+        <!-- Правая часть: Сайдбар с тизерами (R-блок) -->
         <div class="preview-sidebar">
-            <!-- Контейнер, куда JS загрузит виджеты s00-s04 -->
-            <div id="preview-sidebar-content"></div>
+
+            <!-- Заглушка/Заголовок -->
+            <div class="sidebar-spacer">
+                Читайте также
+            </div>
+
+            <!--
+                Контейнер для R-тизеров.
+                JS определит его наличие по ID и загрузит виджеты r000-r004.
+            -->
+            <div id="article-sidebar-content"></div>
         </div>
 
     </div>
@@ -63,7 +72,6 @@
 {% block scripts %}
     {{ super() }}
     <script>
-        // Передаем категорию для фильтрации ленты
         window.currentCategory = {{ category | tojson | safe }};
     </script>
     <script src="/static/js/teaser_feed.js"></script>

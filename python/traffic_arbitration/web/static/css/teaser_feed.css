@@ -17,13 +17,11 @@
         --feed-columns: 2;
     }
 }
-
 @media (min-width: 900px) {
     .feed-container {
         --feed-columns: 3;
     }
 }
-
 @media (min-width: 1200px) {
     .feed-container {
         --feed-columns: 4;
@@ -31,12 +29,12 @@
 }
 
 
-/* --- Стили Тизера (Общие) --- */
+/* --- Стили Тизера (Общие: L и R) --- */
 .teaser-widget {
     background-color: #ffffff;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
     text-decoration: none;
     color: #333;
@@ -46,7 +44,7 @@
 
 .teaser-widget:hover {
     transform: translateY(-5px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
 .teaser-image-wrapper {
@@ -113,9 +111,8 @@
 }
 
 
-/* --- Блок Анонса (Preview Block) --- */
+/* --- Блок Анонса и Статьи --- */
 
-/* Заголовок на всю ширину сверху */
 .preview-header {
     margin-bottom: 20px;
 }
@@ -128,25 +125,21 @@
     margin: 0;
 }
 
-/* Контейнер для двух колонок (Картинка + Сайдбар) */
 .preview-block {
     display: flex;
     flex-wrap: wrap;
     gap: 30px;
     margin-bottom: 40px;
-    align-items: flex-start; /* Гарантирует выравнивание по верху */
+    align-items: flex-start;
 }
 
-/* Левая колонка (Ссылка с картинкой) */
-.preview-main-link {
+/* Ссылка-обертка для анонса или контейнер статьи */
+.preview-main-link,
+.article-content-wrapper {
     text-decoration: none;
     color: inherit;
-    /* Адаптивная ширина:
-       grow 2: занимает больше места, чем сайдбар.
-       basis 500px: базовая ширина.
-    */
     flex: 2 1 500px;
-    min-width: 0; /* Важно для flex */
+    min-width: 0;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -206,51 +199,56 @@
     transition: all 0.2s;
 }
 
-.preview-main-link:hover .preview-read-more-btn {
+.preview-link-block:hover .preview-read-more-btn {
     background: #fff;
     transform: scale(1.05);
     color: #000;
 }
 
-.preview-text {
-    margin-top: 15px;
+.preview-text, .article-text-body {
+    margin-top: 20px;
     font-size: 1.1rem;
     line-height: 1.6;
-    color: #444;
+    color: #333;
 }
 
+/* --- НОВЫЙ СТИЛЬ ДЛЯ АБЗАЦЕВ СТАТЬИ --- */
+.article-paragraph {
+    margin-bottom: 1rem; /* Небольшой отступ между абзацами */
+}
 
-/* Правая колонка (Сайдбар) */
+/* Правая часть: Сайдбар */
 .preview-sidebar {
-    /* Адаптивная ширина:
-       grow 1: может расти.
-       shrink 1: может сжиматься.
-       basis 300px: целевая ширина.
-    */
     flex: 1 1 300px;
     min-width: 250px;
-    max-width: 400px; /* Ограничение, чтобы не стал слишком широким на больших экранах */
+    max-width: 400px;
     display: flex;
     flex-direction: column;
     gap: 15px;
 }
 
-/* Медиа-запрос: Если ширины не хватает для сайдбара рядом (меньше ~994px),
-   скрываем сайдбар полностью, чтобы он не падал вниз.
-   Картинка занимает все место.
-*/
+.sidebar-spacer {
+    height: 3.5rem;
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 10px;
+    font-weight: 700;
+    color: #999;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+}
+
 @media (max-width: 994px) {
     .preview-sidebar {
         display: none;
     }
-
-    .preview-main-link {
-        flex: 1 1 100%; /* Растягиваем анонс на всю ширину */
+    .preview-main-link, .article-content-wrapper {
+        flex: 1 1 100%;
     }
 }
 
 
-/* Виджеты в сайдбаре */
+/* Виджеты в сайдбаре (S-тип) */
 .sidebar-widget {
     display: flex;
     align-items: center;
@@ -294,4 +292,69 @@
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+/* --- In-Article Widget (I-тип) --- */
+
+.in-article-widget {
+    display: flex;
+    align-items: flex-start;
+    margin: 25px 0;
+    background: #fdfdfd;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 15px;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.2s;
+}
+
+.in-article-widget:hover {
+    background: #f8f8f8;
+}
+
+.in-article-image {
+    width: clamp(85px, 20vw, 150px);
+    aspect-ratio: 1 / 1; /* Квадрат */
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    margin-right: 20px;
+    background-color: #f0f0f0;
+    /* Выравнивание картинки по верху уже задано через align-items: flex-start у родителя */
+}
+
+.in-article-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    /* Убрали justify-content: center и min-height, чтобы контент прижался к верху */
+    /* justify-content: center; */
+    /* min-height: clamp(85px, 20vw, 150px); */
+}
+
+.in-article-title {
+    /* Увеличили размер шрифта */
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 0; /* Убрали нижний отступ, так как текста больше нет */
+    line-height: 1.2;
+    /* Убрали верхний отступ, который мог быть у h4 по умолчанию */
+    margin-top: 0;
+}
+
+.in-article-text {
+    /* Скрываем текст статьи в тизере */
+    display: none;
+}
+
+.in-article-widget-placeholder {
+    height: 100px;
+    background: #f9f9f9;
+    margin: 20px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ccc;
+    border-radius: 8px;
 }

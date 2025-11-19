@@ -1,5 +1,5 @@
 /*
-  Глобальная логика для рендеринга "бесконечной" ленты тизеров + сайдбара.
+  Глобальная логика для рендеринга "бесконечной" ленты тизеров + сайдбара + тизеров в статье.
   Выполняет единый запрос при инициализации.
   Ожидает, что JQuery ($) уже загружен.
   Ожидает, что в `window` определена переменная `currentCategory` (может быть null).
@@ -177,7 +177,7 @@ function renderWidget(widgetName, teaser, htmlBuilder) {
     }
 }
 
-// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ХЕЛПЕРЫ ЛЕНТЫ ---
+// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ХЕЛПЕРЫ ---
 const $feed = $('#teaser-feed');
 const $trigger = $('<div id="feed-load-trigger-dynamic"></div>');
 $trigger.css({height: '1px', width: '100%'});
@@ -194,7 +194,6 @@ function getGridColumns() {
     return parseInt(columns, 10) || 1;
 }
 
-// --- НОВОЕ: Расчет количества рядов для заполнения экрана ---
 function estimateRowsToFillScreen() {
     const cols = getGridColumns();
     const containerWidth = $feed.width() || $(window).width();
@@ -203,14 +202,9 @@ function estimateRowsToFillScreen() {
     const cardWidth = (containerWidth - (gap * (cols - 1))) / cols;
     // Примерная высота: картинка (16:9) + текст (~160px с отступами)
     const estimatedCardHeight = (cardWidth * 0.5625) + 160;
-
     const screenHeight = $(window).height();
-
     // Сколько рядов влезет + 1 запасной
     const rows = Math.ceil(screenHeight / estimatedCardHeight) + 1;
-
-    // Ограничим разумным минимумом (1) и максимумом (например, 5),
-    // чтобы не грузить слишком много при ошибке расчета.
     return Math.max(1, Math.min(rows, 5));
 }
 
@@ -219,8 +213,7 @@ function createFeedPlaceholders(row, columns) {
     if (!$feed.length) return widgetsMap;
 
     for (let col = 0; col < columns; col++) {
-        // Формат: l[1-char COL][2-char ROW]
-        // Пример: l000, l100, l001
+        // l[col][row_padded]
         const widgetName = `l${col.toString(16)}${row.toString(16).padStart(2, '0')}`;
         const placeholderId = `widget-${widgetName}`;
 
@@ -237,8 +230,7 @@ function createFeedPlaceholders(row, columns) {
     return widgetsMap;
 }
 
-// Функция для догрузки ленты (скролл или инициализация пачки)
-// count - сколько линий загрузить (по умолчанию 1)
+// Догрузка ленты (скролл)
 function fetchFeedNextPage(count = 1) {
     if (isFeedLoading || currentFeedPage >= MAX_FEED_ROWS - 1) {
         if (currentFeedPage >= MAX_FEED_ROWS - 1) $trigger.hide();
@@ -268,6 +260,7 @@ function fetchFeedNextPage(count = 1) {
     requestTeasersAPI(widgetsMap, window.currentCategory)
         .then(widgets => {
             for (const wName in widgetsMap) {
+                // Лента всегда рендерится как большая карточка
                 renderWidget(wName, widgets[wName], (t, url) => `
                     <div class="teaser-widget" data-teaser-id="${t.id}">
                         <a href="${url}" class="teaser-link">
@@ -305,34 +298,62 @@ $(document).ready(function () {
     // 1. Сбор виджетов для ЕДИНОГО запроса
     const initialWidgetsMap = {};
 
-    // --- Сайдбар (если есть) ---
-    const $sidebarContainer = $('#preview-sidebar-content');
-    if ($sidebarContainer.length && $sidebarContainer.is(':visible')) {
+    // --- 1.1 Сайдбар (S - Анонс) ---
+    const $sidebarS = $('#preview-sidebar-content');
+    if ($sidebarS.length && $sidebarS.is(':visible')) {
         for (let i = 0; i < 5; i++) {
-            // --- ИЗМЕНЕНИЕ: Нейминг сайдбара приведен к стандарту 4 символа ---
-            // Формат: s[1-char COL][2-char ROW]
-            // Для сайдбара колонка всегда 0.
-            // Было: s00, s01... (3 chars)
-            // Стало: s000, s001... (4 chars)
-            const rowHex = i.toString(16).padStart(2, '0');
-            const wName = `s0${rowHex}`;
-            // --- Конец изменения ---
-
+            const wName = `s0${i.toString(16).padStart(2, '0')}`;
             initialWidgetsMap[wName] = 1;
-            $sidebarContainer.append(`
+            $sidebarS.append(`
                 <div id="widget-${wName}" class="sidebar-widget-placeholder" style="height: 80px; background: #f9f9f9; margin-bottom:10px; border-radius:6px;"></div>
             `);
         }
     }
 
-    // --- Лента (Первый экран) ---
+    // --- 1.2 Сайдбар (R - Статья) ---
+    // ИЗМЕНЕНО: Рассчитываем количество виджетов динамически
+    const $sidebarR = $('#article-sidebar-content');
+    if ($sidebarR.length && $sidebarR.is(':visible')) {
+        // Находим блок статьи, чтобы узнать его высоту
+        const $articleWrapper = $('.article-content-wrapper');
+        let rCount = 5; // Дефолтное значение (fallback)
+
+        if ($articleWrapper.length) {
+            const articleHeight = $articleWrapper.outerHeight();
+            // Высота одного виджета (включая отступ): ~270px (250+20)
+            const widgetHeight = 270;
+            // Рассчитываем, сколько влезет
+            const calculatedCount = Math.floor(articleHeight / widgetHeight);
+            // Ограничиваем разумными рамками (например, от 2 до 20)
+            rCount = Math.max(2, Math.min(calculatedCount, 20));
+        }
+
+        console.log(`Article Sidebar (R): height=${$articleWrapper.outerHeight()}, count=${rCount}`);
+
+        for (let i = 0; i < rCount; i++) {
+            const wName = `r0${i.toString(16).padStart(2, '0')}`;
+            initialWidgetsMap[wName] = 1;
+            // Для R-блока плейсхолдеры побольше
+            $sidebarR.append(`
+                <div id="widget-${wName}" class="sidebar-widget-placeholder" style="height: 250px; background: #f9f9f9; margin-bottom:20px; border-radius:12px;"></div>
+            `);
+        }
+    }
+
+    // --- 1.3 Тизеры в статье (I) ---
+    $('.in-article-widget-placeholder').each(function () {
+        const wName = $(this).data('widget-name');
+        if (wName) {
+            initialWidgetsMap[wName] = 1;
+        }
+    });
+
+    // --- 1.4 Лента (L - Первый экран) ---
     if ($feed.length) {
         $feed.append($trigger);
 
         // Расчет количества рядов для первого экрана
         const initialRows = estimateRowsToFillScreen();
-        console.log(`Расчет: нужно ${initialRows} рядов для заполнения экрана.`);
-
         const columns = getGridColumns();
 
         // Генерируем плейсхолдеры для всех начальных рядов
@@ -353,12 +374,37 @@ $(document).ready(function () {
                     const t = widgets[wName];
 
                     if (wName.startsWith('s')) {
-                        // Сайдбар
+                        // S-блок (мини-тизер)
                         renderWidget(wName, t, (teaser, url) => `
                             <a href="${url}" class="sidebar-widget" data-teaser-id="${teaser.id}">
                                 <img src="${teaser.image}" class="sidebar-image" alt="">
                                 <div class="sidebar-content">
                                     <h4 class="sidebar-title">${teaser.title}</h4>
+                                </div>
+                            </a>
+                        `);
+                    } else if (wName.startsWith('r')) {
+                        // R-блок (полноценная карточка, как в ленте)
+                        renderWidget(wName, t, (teaser, url) => `
+                            <div class="teaser-widget" data-teaser-id="${teaser.id}" style="margin-bottom: 20px;">
+                                <a href="${url}" class="teaser-link">
+                                    <div class="teaser-image-wrapper">
+                                        <img src="${teaser.image}" alt="${teaser.title}" class="teaser-image" onerror="this.style.display='none'">
+                                    </div>
+                                    <div class="teaser-content">
+                                        <h3 class="teaser-title">${teaser.title}</h3>
+                                    </div>
+                                </a>
+                            </div>
+                        `);
+                    } else if (wName.startsWith('i')) {
+                        // I-блок (внутри статьи)
+                        renderWidget(wName, t, (teaser, url) => `
+                            <a href="${url}" class="in-article-widget" data-teaser-id="${teaser.id}">
+                                <img src="${teaser.image}" class="in-article-image" alt="">
+                                <div class="in-article-content">
+                                    <h4 class="in-article-title">${teaser.title}</h4>
+                                    <div class="in-article-text">${teaser.text || ''}</div>
                                 </div>
                             </a>
                         `);
