@@ -1,12 +1,78 @@
 {% extends "layout.html" %}
 
+{% block title %}
+    {{ article.title }} :: {{ config.company_name }}
+{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <link rel="stylesheet" href="/static/css/loader.css?v=7">
+{% endblock %}
+
 {% block content %}
-<div class="container">
-    <h1>{{ article.title }}</h1>
-    <p><em>{{ article.publication_date }}</em></p>
-    {% if article.image %}
-        <img src="{{ article.image }}" alt="{{ article.title }}" class="news-image">
-    {% endif %}
-    <div>{{ article.text | safe }}</div>
-</div>
+<main class="main-container">
+
+    <!-- Заголовок -->
+    <div class="preview-header">
+        <h1 class="preview-title-full">{{ article.title }}</h1>
+    </div>
+
+    <!-- БЛОК КОНТЕНТА (Статья + Сайдбар) -->
+    <div class="preview-block">
+
+        <!-- Левая часть: Статья -->
+        <div class="preview-main-link article-content-wrapper">
+
+            <div class="preview-image-container">
+                <!-- Размытый фон -->
+                <div class="preview-image-bg" style="background-image: url('{{ article.image.link if article.image else bg }}');"></div>
+
+                <!-- Основная картинка -->
+                <img src="{{ article.image.link if article.image else bg }}"
+                     alt="{{ article.title }}"
+                     class="preview-image-fg"
+                     onerror="this.style.display='none'">
+            </div>
+
+            <!-- ТЕКСТ СТАТЬИ С ТИЗЕРАМИ -->
+            <div class="article-text-body">
+                <!-- Используем processed content, переданный из main.py -->
+                {{ article_content_with_teasers | safe }}
+            </div>
+
+        </div>
+
+        <!-- Правая часть: Сайдбар с тизерами (R-блок) -->
+        <div class="preview-sidebar">
+
+            <!-- Заглушка/Заголовок -->
+            <div class="sidebar-spacer">
+                Читайте также
+            </div>
+
+            <!--
+                Контейнер для R-тизеров.
+                JS определит его наличие по ID и загрузит виджеты r000-r004.
+            -->
+            <div id="article-sidebar-content"></div>
+        </div>
+
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
+
+    <!-- ЛЕНТА ВНИЗУ -->
+    <div id="teaser-feed" class="feed-container">
+        <!-- JS заполнит это -->
+    </div>
+
+</main>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        window.currentCategory = {{ category | tojson | safe }};
+    </script>
+    <script src="/static/js/@app.get("/cat/{category}", response_class=HTMLResponse)js"></script>
 {% endblock %}
