@@ -1,10 +1,7 @@
-# /home/andrey/Projects/Work/traffic-arbitration/python/traffic_arbitration/web/main.py
-
 from pathlib import Path
-import json
-from typing import List, Dict, Optional
-from fastapi import FastAPI, Request, Form, HTTPException, Depends, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from typing import Optional
+from fastapi import FastAPI, Request, HTTPException, Depends, Body
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine
@@ -12,14 +9,11 @@ from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
 from traffic_arbitration.common.config import config
-from traffic_arbitration.models import Article, ArticlePreview as ArticlePreviewDB
-from traffic_arbitration.db.queries import get_article_by_slug_and_category, get_article_by_slug
-from .utils import insert_teasers, inject_in_article_teasers
+from traffic_arbitration.db.queries import get_article_by_slug
+from .utils import inject_in_article_teasers
 from .cache import news_cache
 from .services import NewsRanker, TeaserService
 from .schemas import (
-    ArticlePreviewSchema,
-    ArticleSchema,
     TeaserRequestSchema,
     TeaserResponseSchema
 )
@@ -154,16 +148,8 @@ def get_db():
 # --- Маршруты ---
 
 @app.get("/", response_class=HTMLResponse)
-async def read_index(request: Request, category: Optional[str] = None):
-    # 'category' здесь None
-    context = template_context(request)
-    context.update({"category": None})
-    return templates.TemplateResponse("index.html", context)
-
-
 @app.get("/cat/{category}", response_class=HTMLResponse)
-async def read_category(request: Request, category: str):
-    # 'category' здесь имеет значение
+async def read_index(request: Request, category: Optional[str] = None):
     context = template_context(request)
     context.update({"category": category})
     return templates.TemplateResponse("index.html", context)
@@ -189,7 +175,6 @@ async def read_preview(request: Request, slug: str, db: Session = Depends(get_db
     return templates.TemplateResponse("preview.html", context)
 
 
-# --- НОВЫЙ РОУТ ДЛЯ СТАТЬИ ---
 @app.get("/article/{slug}", response_class=HTMLResponse)
 async def read_article_page(request: Request, slug: str, db: Session = Depends(get_db)):
     """
@@ -215,7 +200,7 @@ async def read_article_page(request: Request, slug: str, db: Session = Depends(g
         "category": category,
         "image_obj": db_article.image
     })
-    return templates.TemplateResponse("article_page.html", context)
+    return templates.TemplateResponse("article.html", context)
 
 
 @app.get("/fcm.js")
@@ -232,8 +217,6 @@ async def manifest(request: Request):
         "manifest.json", template_context(request),
         media_type="application/manifest+json"
     )
-
-
 
 
 @app.post("/etc", response_model=TeaserResponseSchema)
@@ -260,8 +243,6 @@ async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     # Сервис уже возвращает словарь,
     # соответствующий TeaserResponseSchema ({"widgets": ..., "newly_served_ids": ...})
     return response_data
-
-
 
 
 if __name__ == "__main__":

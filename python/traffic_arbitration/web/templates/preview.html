@@ -6,7 +6,7 @@
 
 {% block head %}
     {{ super() }}
-    <link rel="stylesheet" href="/static/css/teaser_feed.css?v=8">
+    <link rel="stylesheet" href="/static/css/loader.css?v=8">
 {% endblock %}
 
 {% block content %}
@@ -66,5 +66,5 @@
         // Передаем категорию для фильтрации ленты
         window.currentCategory = {{ category | tojson | safe }};
     </script>
-    <script src="/static/js/teaser_feed.js"></script>
+    <script src="/static/js/loader.js"></script>
 {% endblock %}
