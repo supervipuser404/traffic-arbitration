@@ -1,4 +1,3 @@
-# Инициализация модуля db
 import psycopg2
 from sshtunnel import SSHTunnelForwarder
 from sqlalchemy import create_engine

@@ -1,5 +1,3 @@
-# /home/andrey/Projects/Work/traffic-arbitration/python/scripts/assign_filenames.py
-
 import sys
 import uuid
 from pathlib import Path

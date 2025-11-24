@@ -1,5 +1,3 @@
-# /home/andrey/Projects/Work/traffic-arbitration/python/traffic_arbitration/web/schemas.py
-
 from pydantic import BaseModel, computed_field
 from datetime import datetime
 from typing import Optional, List, Dict

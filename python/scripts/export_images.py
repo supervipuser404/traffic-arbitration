@@ -1,5 +1,3 @@
-# /home/andrey/Projects/Work/traffic-arbitration/python/scripts/export_images.py
-
 import sys
 from pathlib import Path
 import logging
