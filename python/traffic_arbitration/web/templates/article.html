@@ -6,7 +6,7 @@
 
 {% block head %}
     {{ super() }}
-    <link rel="stylesheet" href="/static/css/loader.css?v=7">
+    <link rel="stylesheet" href="/static/css/loader.css?v=8">
 {% endblock %}
 
 {% block content %}
@@ -74,5 +74,5 @@
     <script>
         window.currentCategory = {{ category | tojson | safe }};
     </script>
-    <script src="/static/js/@app.get("/cat/{category}", response_class=HTMLResponse)js"></script>
+    <script src="/static/js/loader.js?v=2.3"></script>
 {% endblock %}
