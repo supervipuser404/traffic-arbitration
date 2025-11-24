@@ -1,39 +1,40 @@
 import time
 import logging
 import threading
+import random
 from typing import List, Dict, Any, Optional
-from sqlalchemy import select, func
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 from traffic_arbitration.models import (
     ArticlePreview, Article, ArticleCategory, Category
 )
 from dataclasses import dataclass
 from datetime import datetime
 
-# Настройка логгера
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class CachedPreviewItem:
     """
-    Явная структура данных (контракт) для хранения
-    объекта превью и его "виртуальных" полей в кэше.
+    Структура данных для хранения превью в памяти.
+    Добавлен CTR для имитации ранжирования.
     """
     preview_obj: ArticlePreview
     publication_date: Optional[datetime]
     category: Optional[str]
     slug: Optional[str]
+    ctr: float = 0.0  # Estimated Click-Through Rate (0.0 - 1.0)
 
 
 class NewsCache:
     """
-    Потокобезопасный кэш для хранения превью новостей.
+    Потокобезопасный кэш новостей с поддержкой метрик ранжирования.
     """
 
     def __init__(self, ttl_seconds: int = 300):
         self.ttl = ttl_seconds
-
+        # Основной список, отсортированный по CTR (для RTB)
         self.previews: List[CachedPreviewItem] = []
 
         self.last_updated: float = 0
@@ -43,11 +44,7 @@ class NewsCache:
         logger.info(f"NewsCache инициализирован с TTL = {self.ttl} сек.")
 
     def set_session_maker(self, session_maker: sessionmaker):
-        """
-        Внедрение (DI) фабрики сессий из `main.py`
-        """
         self.session_maker = session_maker
-        logger.info("Фабрика сессий успешно внедрена в кэш.")
 
     def get_previews(self) -> List[CachedPreviewItem]:
         """
@@ -55,7 +52,6 @@ class NewsCache:
         Запускает обновление в фоне, если кэш устарел.
         """
         self._update_if_needed()
-        # *Немедленно* возвращаем то, что есть в кэше
         return self.previews
 
     def _update_cache_from_db(self):
@@ -67,11 +63,9 @@ class NewsCache:
             logger.error("Кэш не может обновиться: session_maker не установлен.")
             return
 
-        logger.info("Кэш устарел. Обновление из базы данных...")
+        logger.info("Обновление кэша из БД...")
 
         with self.session_maker() as db_session:
-            # Запрос для получения всех активных превью и
-            # связанных данных (дата публикации статьи, категория)
             stmt = (
                 select(
                     ArticlePreview.id,
@@ -89,105 +83,72 @@ class NewsCache:
                 .join(ArticleCategory, Article.id == ArticleCategory.article_id)
                 .join(Category, ArticleCategory.category_id == Category.id)
                 .where(ArticlePreview.is_active == True)
+                # Сначала свежие, но сортировка будет переделана в Python
                 .order_by(Article.source_datetime.desc())
             )
 
-            # Выполняем запрос
             all_previews_data = db_session.execute(stmt).mappings().all()
-
             new_previews = []
             model_keys = ArticlePreview.__table__.columns.keys()
 
             for preview_data_row in all_previews_data:
                 preview_data = dict(preview_data_row)
 
-                # 1. Отделяем "дополнительные" данные
                 extra_data = {
                     "publication_date": preview_data.get("publication_date"),
                     "category": preview_data.get("category"),
                     "slug": preview_data.get("slug")
                 }
 
-                # 2. Формируем словарь только с теми данными,
-                #    которые есть в модели ArticlePreview
-                model_data = {
-                    key: preview_data[key]
-                    for key in model_keys
-                    if key in preview_data
-                }
+                model_data = {k: preview_data[k] for k in model_keys if k in preview_data}
 
-                # 3. Создаем объект модели
                 try:
-                    # Этот объект "transient" (не привязан к сессии)
                     preview_obj = ArticlePreview(**model_data)
 
-                    # 4. Сохраняем в dataclass
+                    # Имитация ML: присваиваем случайный CTR.
+                    # В реальной системе здесь был бы запрос к Redis/Feature Store.
+                    # Даем буст свежим новостям
+                    days_old = (datetime.now() - (extra_data["publication_date"] or datetime.now())).days
+                    freshness_factor = max(0, 1.0 - (days_old * 0.1))  # Угасает за 10 дней
+
+                    base_ctr = random.uniform(0.01, 0.15)
+                    final_ctr = base_ctr * (1 + freshness_factor)
+
                     new_previews.append(CachedPreviewItem(
                         preview_obj=preview_obj,
                         publication_date=extra_data["publication_date"],
                         category=extra_data["category"],
-                        slug=extra_data["slug"]
+                        slug=extra_data["slug"],
+                        ctr=final_ctr
                     ))
 
-                except TypeError as e:
-                    logger.error(f"Ошибка при создании ArticlePreview: {e}. Данные: {model_data}")
+                except Exception as e:
+                    logger.error(f"Ошибка создания объекта кэша: {e}")
 
-            # Объекты `preview_obj` в `new_previews`
-            # УЖЕ "отсоединены", так как
-            # они были созданы вручную (transient) и никогда
-            # не добавлялись в db_session (через add()).
+            # Сортировка по CTR (High -> Low) для RTB логики
+            new_previews.sort(key=lambda x: x.ctr, reverse=True)
 
-            # Атомарно заменяем старые данные новыми
             self.previews = new_previews
             self.last_updated = time.time()
-            logger.info(f"Кэш успешно обновлен. Загружено {len(self.previews)} превью.")
-
-        # Сессия (db_session) здесь закрывается.
-        # Объекты в self.previews безопасны для хранения.
+            logger.info(
+                f"Кэш обновлен. Загружено {len(self.previews)} превью. Top CTR: {self.previews[0].ctr if self.previews else 0:.4f}")
 
     def force_update(self):
-        """
-        Принудительное (синхронное) обновление кэша.
-        Используется при старте приложения.
-        """
-        # Блокируем, чтобы избежать "гонки" с фоновыми обновлениями
         with self.update_lock:
             self._update_cache_from_db()
 
     def _run_update_in_background(self):
-        """
-        Обертка для запуска `_update_cache_from_db` в потоке.
-        Обеспечивает, что только один поток обновления работает.
-        """
         if self.update_lock.acquire(blocking=False):
-            logger.info("Запуск фонового обновления кэша...")
             try:
                 self._update_cache_from_db()
             except Exception as e:
-                logger.error(f"Фоновое обновление кэша провалено: {e}", exc_info=True)
+                logger.error(f"Фоновое обновление кэша упало: {e}", exc_info=True)
             finally:
                 self.update_lock.release()
-                logger.info("Фоновое обновление кэша завершено.")
-        else:
-            logger.info("Обновление кэша уже в процессе, пропускаем.")
 
     def _update_if_needed(self):
-        """
-        (Неблокирующий) Проверяет TTL и, если нужно,
-        запускает обновление в фоновом потоке.
-        """
-        if time.time() - self.last_updated <= self.ttl:
-            return
-
-        if self.update_lock.locked():
-            return
-
-        threading.Thread(
-            target=self._run_update_in_background,
-            daemon=True
-        ).start()
+        if time.time() - self.last_updated > self.ttl and not self.update_lock.locked():
+            threading.Thread(target=self._run_update_in_background, daemon=True).start()
 
 
-# --- Глобальный экземпляр кэша ---
-# `main.py` будет импортировать этот экземпляр
 news_cache = NewsCache(ttl_seconds=300)
