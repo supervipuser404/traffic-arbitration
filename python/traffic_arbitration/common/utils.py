@@ -1,4 +1,3 @@
-# scrapper/utils.py
 def unify_str_values(existing_value: str, new_value: str, sep=";") -> str:
     """
     Объединяет два строковых поля, где значения разделены sep.
