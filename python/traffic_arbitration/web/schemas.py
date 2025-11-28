@@ -20,13 +20,13 @@ class BaseSchema(BaseModel):
 # Создание отдельных схем для связанных сущностей — лучшая практика.
 # Это позволяет вам точно контролировать, какие данные отдавать по API.
 
-class TagSchema(BaseSchema):
+class TagSchema(BaseModel):
     """Схема для тега."""
     id: int
     code: str
 
 
-class CategorySchema(BaseSchema):
+class CategorySchema(BaseModel):
     """Схема для категории."""
     id: int
     code: str
@@ -42,7 +42,7 @@ class GeoSchema(BaseSchema):
 
 # --- Основные схемы для API ---
 
-class ArticlePreviewSchema(BaseSchema):
+class ArticlePreviewSchema(BaseModel):
     """
     Pydantic-схема для превью статьи.
     Определяет поля, которые будут возвращены клиенту в JSON.
@@ -73,7 +73,7 @@ class ArticlePreviewSchema(BaseSchema):
         return f"{self.created_at:%d-%m-%Y}"
 
 
-class ArticleSchema(BaseSchema):
+class ArticleSchema(BaseModel):
     """
     Pydantic-схема для полной статьи.
     Расширена для включения связанных данных (теги, категории, гео)
