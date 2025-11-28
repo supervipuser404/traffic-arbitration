@@ -96,8 +96,15 @@ async function requestTeasers(widgetsMap) {
 
         const data = await resp.json();
 
-        if (data.newly_served_ids) {
-            updateLongTermSeenIds(data.newly_served_ids);
+        if (data.newly_served_ids && data.newly_served_ids.length > 0) {
+            data.newly_served_ids.forEach(id => SEEN_IDS_ON_PAGE.add(id));
+        }
+        // Save the *entire* seen_ids_long_term from the backend response directly to the cookie.
+        // No client-side truncation or uniqueness checks are performed as per user's instruction.
+        if (data.seen_ids_long_term) {
+            const exp = new Date();
+            exp.setFullYear(exp.getFullYear() + 1);
+            document.cookie = `${LONG_TERM_COOKIE_NAME}=${encodeURIComponent(JSON.stringify(data.seen_ids_long_term))}; expires=${exp.toUTCString()}; path=/; SameSite=Lax`;
         }
         return data.widgets;
     } catch (e) {

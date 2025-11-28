@@ -38,106 +38,90 @@ class TeaserService:
     """
     Распределяет тизеры по виджетам (l, s, r, i) с учетом дедупликации.
     """
+    priority_map = {'s': 0, 'r': 1, 'i': 2, 'l': 3}
 
     def __init__(self, news_ranker: NewsRanker):
         self.news_ranker = news_ranker
+
+    @classmethod
+    def widget_priority(cls, w_name: str, priority_map: Dict[str, int] = None) -> int:
+        priority_map = priority_map or cls.priority_map
+        return priority_map.get(w_name[0], 99)
+
+    @staticmethod
+    def candidate_generator(candidates: List[CachedPreviewItem],
+                            qualities: List[int] = None) -> Iterator[CachedPreviewItem]:
+        if qualities is None:
+            qualities = [2] * len(candidates)
+        current_quality = 2  # Start with Fresh
+        while True:
+            for i in range(len(candidates)):
+                if qualities[i] == current_quality:
+                    yield candidates[i]
+                    qualities[i] -= 1  # Ухудшаем качество, чтобы не выдавать один и тот же тизер снова
+            current_quality -= 1
 
     def get_teasers_for_widgets(self, request_data: TeaserRequestSchema) -> Dict:
         """
         Единый метод для заполнения всех виджетов на странице.
         """
-
-        # 1. Формируем множества исключений (seen IDs)
-        seen_page = set(request_data.seen_ids_page)
-        seen_long_term = set(request_data.seen_ids_long_term)
-
-        # Полный бан-лист для "свежих" показов
-        exclude_ids = seen_page.union(seen_long_term)
-
-        # 2. Получаем кандидатов (уже отсортированы по CTR)
+        # 1. Получаем кандидатов (уже отсортированы по CTR)
         candidates = self.news_ranker.get_candidates(category=request_data.category)
 
-        # 3. Разделяем на потоки
-        # Fresh: те, что пользователь не видел (High CTR -> Low CTR)
-        fresh_pool = [x for x in candidates if x.preview_obj.id not in exclude_ids]
+        # 2. Сколько всего нужно тизеров
+        total_needed = sum(request_data.widgets.values())
 
-        # Reusable: те, что видел в long_term (но не на этой странице!), сохраняем порядок CTR
-        # Используем их как fallback, если fresh закончатся
-        reusable_pool = [x for x in candidates if
-                         x.preview_obj.id in seen_long_term and x.preview_obj.id not in seen_page]
+        # 3. Формируем множества исключений (seen IDs)
+        seen_page = set(request_data.seen_ids_page)
+        seen_long_term = set(request_data.seen_ids_long_term)
+        exclude_ids = seen_page.union(seen_long_term)
 
-        # Итераторы для последовательной выдачи
-        fresh_iter = iter(fresh_pool)
-        reusable_iter = iter(reusable_pool)
+        # 4. Ограничиваем список кандидатов, чтобы избежать перебора слишком большого числа
+        if len(candidates) > total_needed + len(exclude_ids):
+            candidates = candidates[:total_needed + len(exclude_ids)]
 
-        # 4. Сортируем виджеты по приоритету заполнения
-        # Важно: Сначала заполняем 's' и 'r' (сайдбары - там лучшие тизеры),
-        # потом 'i' (внутри статьи), потом 'l' (лента).
-        # Сортировка по ключу виджета
-        def widget_priority(w_name: str):
-            if w_name.startswith('s'): return 0  # Sidebar Preview (самое видное)
-            if w_name.startswith('r'): return 1  # Right Sidebar Article
-            if w_name.startswith('i'): return 2  # In-Article
-            return 3  # Feed (Lent)
+        # 5. Рассчитываем качество кандидатов
+        candidates_quality = []
+        for item in candidates:
+            if item.preview_obj.id not in exclude_ids:
+                quality = 2  # Fresh
+            elif item.preview_obj.id in seen_long_term:
+                quality = 1
+            else:
+                quality = 0  # Seen on page
+            candidates_quality.append(quality)
 
-        sorted_widgets = sorted(request_data.widgets.items(), key=lambda x: widget_priority(x[0]))
+        # 6. Сортируем виджеты по приоритету заполнения
+        sorted_widgets = sorted(request_data.widgets.items(), key=lambda x: self.widget_priority(x))
 
         response_widgets: Dict[str, ArticlePreview] = {}
-        newly_served_ids: List[int] = []
 
-        # Локальный сет для дедупликации внутри одного реквеста (чтобы не дать один тизер в 's' и 'l')
-        served_in_this_request: Set[int] = set()
-
+        # 7. Выбираем тизеры для виджетов
+        selected_candidates_ids: Set[int] = set()
+        candidate_generator = self.candidate_generator(candidates, candidates_quality)
         for widget_name, quantity in sorted_widgets:
-            # Обычно quantity=1 для поименных виджетов (l00, s01),
-            # но поддерживаем логику bulk
-            for _ in range(quantity):
-                chosen_item = self._pick_next_teaser(fresh_iter, reusable_iter, served_in_this_request)
+            # Сейчас quantity=1, подразумевалось, что может быть bulk, для чего в ответе мы должны отдавать списки.
+            # Но пока не используется, поэтому оставляем логику простую.
+            candidate = next(candidate_generator)
+            # Прокидываем slug для формирования URL
+            candidate.preview_obj.slug = candidate.slug
+            response_widgets[widget_name] = candidate.preview_obj
+            selected_candidates_ids.add(candidate.preview_obj.id)
 
-                if not chosen_item:
-                    # Тизеры кончились совсем
-                    break
+        # 8. Формируем список newly_served_ids
+        newly_served_ids = list(selected_candidates_ids)
 
-                preview = chosen_item.preview_obj
-                # Прокидываем slug для формирования URL
-                preview.slug = chosen_item.slug
+        # 9. Обновляем seen_ids_long_term
+        # Создаем копию списка, чтобы не изменять оригинальный объект запроса
+        updated_seen_long_term = list(request_data.seen_ids_long_term)
+        # Добавляем в конец новые показанные ID
+        updated_seen_long_term.extend(newly_served_ids)
+        # Обрезаем до последних 200 элементов, чтобы не разрастался бесконечно
+        updated_seen_long_term = updated_seen_long_term[-200:]
 
-                response_widgets[widget_name] = preview
-                served_in_this_request.add(preview.id)
-
-                # Если это был свежий тизер (не из reusable), добавляем в newly_served
-                if preview.id not in seen_long_term:
-                    newly_served_ids.append(preview.id)
-
+        # 10. Возвращаем результат
         return {
             "widgets": response_widgets,
-            "newly_served_ids": newly_served_ids
+            "newly_served_ids": newly_served_ids,
+            "seen_ids_long_term": updated_seen_long_term,
         }
-
-    def _pick_next_teaser(
-            self,
-            fresh_iter: Iterator[CachedPreviewItem],
-            reusable_iter: Iterator[CachedPreviewItem],
-            ignore_ids: Set[int]
-    ) -> Optional[CachedPreviewItem]:
-        """
-        Берет следующий доступный тизер из fresh, если нет — из reusable.
-        Пропускает те, что в ignore_ids.
-        """
-        # 1. Пробуем Fresh
-        try:
-            while True:
-                item = next(fresh_iter)
-                if item.preview_obj.id not in ignore_ids:
-                    return item
-        except StopIteration:
-            pass
-
-        # 2. Fallback: Reusable
-        try:
-            while True:
-                item = next(reusable_iter)
-                if item.preview_obj.id not in ignore_ids:
-                    return item
-        except StopIteration:
-            return None
