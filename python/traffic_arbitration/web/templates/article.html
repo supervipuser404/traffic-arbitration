@@ -1,16 +1,14 @@
 {% extends "layout.html" %}
 
-{% block title %}
-    {{ article.title }} :: {{ config.company_name }}
+{% block page_title %}
+    {{ article.title }}
 {% endblock %}
 
 {% block head %}
     {{ super() }}
-    <link rel="stylesheet" href="/static/css/loader.css?v=8">
 {% endblock %}
 
 {% block content %}
-<main class="main-container">
 
     <!-- Заголовок -->
     <div class="preview-header">
@@ -66,13 +64,8 @@
         <!-- JS заполнит это -->
     </div>
 
-</main>
 {% endblock %}
 
 {% block scripts %}
     {{ super() }}
-    <script>
-        window.currentCategory = {{ category | tojson | safe }};
-    </script>
-    <script src="/static/js/loader.js?v=2.3"></script>
 {% endblock %}

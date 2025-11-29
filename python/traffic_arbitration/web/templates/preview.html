@@ -1,16 +1,14 @@
 {% extends "layout.html" %}
 
-{% block title %}
-    {{ article.title }} :: {{ config.company_name }}
+{% block page_title %}
+    {{ article.title }}
 {% endblock %}
 
 {% block head %}
     {{ super() }}
-    <link rel="stylesheet" href="/static/css/loader.css?v=8">
 {% endblock %}
 
 {% block content %}
-<main class="main-container">
 
     <!-- Заголовок вынесен наверх -->
     <div class="preview-header">
@@ -57,14 +55,8 @@
         <!-- JS заполнит это -->
     </div>
 
-</main>
 {% endblock %}
 
 {% block scripts %}
     {{ super() }}
-    <script>
-        // Передаем категорию для фильтрации ленты
-        window.currentCategory = {{ category | tojson | safe }};
-    </script>
-    <script src="/static/js/loader.js"></script>
 {% endblock %}

@@ -7,7 +7,7 @@
     <!--
       ЗАГОЛОВОК ТЕПЕРЬ ОПРЕДЕЛЯЕТСЯ В ДОЧЕРНИХ ШАБЛОНАХ
     -->
-    <title>{% block title %}Новости :: {{ config.city | default('Moscow')}} :: {{ config.company_name }}{% endblock %}</title>
+    <title>{% block page_title %}{% if config.city %}{{ config.city | default('Moscow') }} :: {% endif %}Новости{% endblock %} :: {{ config.company_name }}</title>
 
     <link rel="apple-touch-icon" sizes="180x180" href="/static/img/icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/img/icons/favicon-32x32.png">
@@ -16,6 +16,7 @@
 
     <!-- Подключение базовых стилей -->
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/loader.css?v=8"> {# Перемещено из дочерних шаблонов #}
 
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
@@ -32,10 +33,13 @@
         </div>
     </div>
 
-    <!--
-      Сюда 'index.html' (и другие) вставят свой контент.
-    -->
-    {% block content %}{% endblock %}
+    <main class="main-container"> {# Перемещено из дочерних шаблонов #}
+        {% block content %}{% endblock %}
+    </main>
+
+    <div id="teaser-feed" class="feed-container">
+        <!-- JS заполнит это -->
+    </div> {# Перемещено из дочерних шаблонов #}
 
     <footer>
         <div class="container">
@@ -56,6 +60,11 @@
         <!-- Базовые скрипты -->
         <script src="/static/js/jquery-3.7.1.min.js"></script>
         <script src="/fcm.js"></script>
+        <script>
+            // Инициализация window.currentCategory, если переменная существует
+            window.currentCategory = {{ category | tojson | safe if category is defined else "null" }};
+        </script>
+        <script src="/static/js/loader.js"></script> {# Перемещено из дочерних шаблонов #}
     {% endblock %}
 </body>
 </html>

@@ -1,17 +1,21 @@
 /*
-  Traffic Arbitration Loader v2.3
-  - FIX: Исправлена ошибка 404 в article.html (через корректное подключение этого файла)
-  - FIX: Гарантированно убран текст из тизеров ленты (l)
-  - Единый запрос (/etc)
+  Traffic Arbitration Loader v2.5
+  - FIX: Исправлена логика бесконечной прокрутки в системе очередей.
+  - ADD: Внедрена последовательная очередь запросов с таймаутом и повторными попытками.
 */
 
 // --- КОНСТАНТЫ И СОСТОЯНИЕ ---
 const LONG_TERM_COOKIE_NAME = 'ta_seen_ids';
 const MAX_COOKIE_IDS = 300;
 const SEEN_IDS_ON_PAGE = new Set(); // Краткосрочная память
-let isFeedLoading = false;
 let currentFeedPage = -1;
 const MAX_FEED_ROWS = 100;
+const REQUEST_TIMEOUT_MS = 300;
+
+// --- ОЧЕРЕДЬ ЗАПРОСОВ ---
+const teaserRequestQueue = [];
+let isRequestInFlight = false;
+let isFeedLoading = false; // Отдельный флаг для состояния загрузки ленты
 
 // --- COOKIE HELPERS ---
 function getLongTermSeenIds() {
@@ -41,11 +45,7 @@ function updateLongTermSeenIds(newIds) {
 const viewObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
         if (entry.isIntersecting) {
-            const tid = parseInt(entry.target.dataset.teaserId);
-            if (tid && !SEEN_IDS_ON_PAGE.has(tid)) {
-                SEEN_IDS_ON_PAGE.add(tid);
-                viewObserver.unobserve(entry.target);
-            }
+            viewObserver.unobserve(entry.target);
         }
     });
 }, { threshold: 0.5 });
@@ -59,52 +59,100 @@ function buildTrackingUrl(baseUrl, widgetName) {
     } catch(e) { return baseUrl; }
 }
 
-// --- API REQUEST ---
-async function requestTeasers(widgetsMap) {
+// --- CORE API LOGIC ---
+async function _fetchTeasers(widgetsMap, signal) {
     const longTerm = getLongTermSeenIds();
     const pageSeen = Array.from(SEEN_IDS_ON_PAGE);
     const uid = localStorage.getItem('ta_uid') || 'anon';
+    let cat = window.currentCategory || null;
 
-    let cat = null;
-    if (typeof window.currentCategory !== 'undefined') {
-        cat = window.currentCategory;
+    const resp = await fetch('/etc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: signal,
+        body: JSON.stringify({
+            uid: uid, ip: '', ua: navigator.userAgent, url: window.location.href,
+            w: window.innerWidth, h: window.innerHeight,
+            widgets: widgetsMap,
+            seen_ids_page: pageSeen, seen_ids_long_term: longTerm,
+            category: cat
+        })
+    });
+
+    if (!resp.ok) {
+        throw new Error(`API Error: ${resp.status}`);
     }
 
-    try {
-        const resp = await fetch('/etc', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                uid: uid,
-                ip: '',
-                ua: navigator.userAgent,
-                url: window.location.href,
-                w: window.innerWidth,
-                h: window.innerHeight,
-                widgets: widgetsMap,
-                seen_ids_page: pageSeen,
-                seen_ids_long_term: longTerm,
-                category: cat
-            })
-        });
+    const data = await resp.json();
+    
+    if (data.newly_served_ids && data.newly_served_ids.length > 0) {
+        data.newly_served_ids.forEach(id => SEEN_IDS_ON_PAGE.add(id));
+    }
+    if (data.seen_ids_long_term) {
+        const exp = new Date();
+        exp.setFullYear(exp.getFullYear() + 1);
+        document.cookie = `${LONG_TERM_COOKIE_NAME}=${encodeURIComponent(JSON.stringify(data.seen_ids_long_term))}; expires=${exp.toUTCString()}; path=/; SameSite=Lax`;
+    }
+    return data.widgets;
+}
 
-        if (!resp.ok) {
-            const errText = await resp.text();
-            console.error('API Error:', resp.status, errText);
-            throw new Error(`API Error: ${resp.status}`);
+async function executeRequestWithRetry(widgetsMap, attempts = 2) {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+            
+            const widgets = await _fetchTeasers(widgetsMap, controller.signal);
+            
+            clearTimeout(timeoutId);
+            return widgets; // Успех
+        } catch (e) {
+            if (e.name === 'AbortError') {
+                console.warn(`Запрос по таймауту для виджетов:`, widgetsMap, `Попытка ${i + 1}`);
+            } else {
+                console.error(`Ошибка запроса для виджетов:`, widgetsMap, e, `Попытка ${i + 1}`);
+            }
+            if (i === attempts - 1) {
+                throw e; // Провалены все попытки
+            }
         }
-
-        const data = await resp.json();
-
-        if (data.newly_served_ids) {
-            updateLongTermSeenIds(data.newly_served_ids);
-        }
-        return data.widgets;
-    } catch (e) {
-        console.error("Ошибка запроса тизеров:", e);
-        return {};
     }
 }
+
+// --- QUEUE PROCESSOR ---
+async function processRequestQueue() {
+    if (isRequestInFlight || teaserRequestQueue.length === 0) {
+        return;
+    }
+    isRequestInFlight = true;
+
+    const requestItem = teaserRequestQueue.shift();
+    
+    try {
+        const widgets = await executeRequestWithRetry(requestItem.widgetsMap);
+        for (const [name, data] of Object.entries(widgets)) {
+            renderWidget(name, data);
+        }
+    } catch (error) {
+        console.error("Не удалось загрузить тизеры (все попытки провалены):", requestItem.widgetsMap, error);
+    } finally {
+        isRequestInFlight = false;
+        if (requestItem.onComplete) {
+            requestItem.onComplete();
+        }
+        setTimeout(processRequestQueue, 0);
+    }
+}
+
+function enqueueTeaserRequest(widgetsMap, onComplete) {
+    if (Object.keys(widgetsMap).length === 0) {
+        if (onComplete) onComplete();
+        return;
+    }
+    teaserRequestQueue.push({ widgetsMap, onComplete });
+    processRequestQueue();
+}
+
 
 // --- RENDERER ---
 function renderWidget(wName, teaser) {
@@ -112,60 +160,21 @@ function renderWidget(wName, teaser) {
     if (!$placeholder.length) return;
 
     if (!teaser) {
-        $placeholder.remove();
         return;
     }
 
     const url = buildTrackingUrl(teaser.url, wName);
     let html = '';
-
     const type = wName.charAt(0);
 
     if (type === 's') { // Sidebar Preview
-        html = `
-            <a href="${url}" class="sidebar-widget" data-teaser-id="${teaser.id}">
-                <img src="${teaser.image}" class="sidebar-image" loading="lazy">
-                <div class="sidebar-content">
-                    <h4 class="sidebar-title">${teaser.title}</h4>
-                </div>
-            </a>`;
-    }
-    else if (type === 'r') { // Sidebar Article
-        html = `
-            <div class="teaser-widget" data-teaser-id="${teaser.id}" style="margin-bottom: 20px;">
-                <a href="${url}" class="teaser-link">
-                    <div class="teaser-image-wrapper">
-                        <img src="${teaser.image}" class="teaser-image" loading="lazy">
-                    </div>
-                    <div class="teaser-content">
-                        <h3 class="teaser-title">${teaser.title}</h3>
-                    </div>
-                </a>
-            </div>`;
-    }
-    else if (type === 'i') { // In-Article
-        html = `
-            <a href="${url}" class="in-article-widget" data-teaser-id="${teaser.id}">
-                <img src="${teaser.image}" class="in-article-image" loading="lazy">
-                <div class="in-article-content">
-                    <h4 class="in-article-title">${teaser.title}</h4>
-                    <div class="in-article-text">${teaser.text || ''}</div>
-                </div>
-            </a>`;
-    }
-    else { // 'l' - Feed
-         // Текст убран по требованию
-         html = `
-            <div class="teaser-widget" data-teaser-id="${teaser.id}">
-                <a href="${url}" class="teaser-link">
-                    <div class="teaser-image-wrapper">
-                        <img src="${teaser.image}" class="teaser-image" loading="lazy">
-                    </div>
-                    <div class="teaser-content">
-                        <h3 class="teaser-title">${teaser.title}</h3>
-                    </div>
-                </a>
-            </div>`;
+        html = `<a href="${url}" class="sidebar-widget" data-teaser-id="${teaser.id}"><img src="${teaser.image}" class="sidebar-image" loading="lazy"><div class="sidebar-content"><h4 class="sidebar-title">${teaser.title}</h4></div></a>`;
+    } else if (type === 'r') { // Sidebar Article
+        html = `<div class="teaser-widget" data-teaser-id="${teaser.id}" style="margin-bottom: 20px;"><a href="${url}" class="teaser-link"><div class="teaser-image-wrapper"><img src="${teaser.image}" class="teaser-image" loading="lazy"></div><div class="teaser-content"><h3 class="teaser-title">${teaser.title}</h3></div></a></div>`;
+    } else if (type === 'i') { // In-Article
+        html = `<a href="${url}" class="in-article-widget" data-teaser-id="${teaser.id}"><img src="${teaser.image}" class="in-article-image" loading="lazy"><div class="in-article-content"><h4 class="in-article-title">${teaser.title}</h4><div class="in-article-text">${teaser.text || ''}</div></div></a>`;
+    } else { // 'l' - Feed
+        html = `<div class="teaser-widget" data-teaser-id="${teaser.id}"><a href="${url}" class="teaser-link"><div class="teaser-image-wrapper"><img src="${teaser.image}" class="teaser-image" loading="lazy"></div><div class="teaser-content"><h3 class="teaser-title">${teaser.title}</h3></div></a></div>`;
     }
 
     const $el = $(html);
@@ -185,10 +194,7 @@ function generatePlaceholders(row, cols) {
         const name = `l${c.toString(16)}${row.toString(16).padStart(2, '0')}`;
         const id = `widget-${name}`;
         if (!$(`#${id}`).length) {
-            $('<div/>', {
-                id: id,
-                class: 'teaser-widget-placeholder'
-            }).insertBefore('#feed-load-trigger');
+            $('<div/>', { id: id, class: 'teaser-widget-placeholder' }).insertBefore('#feed-load-trigger');
         }
         map[name] = 1;
     }
@@ -203,13 +209,8 @@ $(document).ready(function() {
 
     // 1. In-Article (i)
     $('[id^="widget-i"]').each(function() {
-        let name = $(this).data('widget-name');
-        if (!name && this.id) {
-            name = this.id.replace('widget-', '');
-        }
-        if (name) {
-            widgetsToRequest[name] = 1;
-        }
+        let name = $(this).data('widget-name') || this.id.replace('widget-', '');
+        if (name) widgetsToRequest[name] = 1;
     });
 
     // 2. Sidebar Preview (s)
@@ -228,9 +229,7 @@ $(document).ready(function() {
     const $sideR = $('#article-sidebar-content, .article-sidebar-content').first();
     if ($sideR.length && !isMobile) {
         const articleH = $('.article-content-wrapper, article').height() || 800;
-        let count = Math.floor(articleH / 300);
-        count = Math.max(2, Math.min(count, 15));
-
+        let count = Math.min(15, Math.max(2, Math.floor(articleH / 300)));
         for(let i=0; i<count; i++) {
             const name = `r0${i.toString(16).padStart(2,'0')}`;
             if (!$(`#widget-${name}`).length) {
@@ -251,14 +250,8 @@ $(document).ready(function() {
         currentFeedPage = rowsToLoad - 1;
     }
 
-    // 5. ЕДИНЫЙ ЗАПРОС
-    if (Object.keys(widgetsToRequest).length > 0) {
-        requestTeasers(widgetsToRequest).then(widgets => {
-            for (const [name, data] of Object.entries(widgets)) {
-                renderWidget(name, data);
-            }
-        });
-    }
+    // 5. Постановка первоначального запроса в очередь
+    enqueueTeaserRequest(widgetsToRequest);
 
     // --- INFINITE SCROLL ---
     const scrollObserver = new IntersectionObserver((entries) => {
@@ -267,14 +260,11 @@ $(document).ready(function() {
             const cols = getColumns();
             const nextRow = currentFeedPage + 1;
             const req = generatePlaceholders(nextRow, cols);
-
-            requestTeasers(req).then(widgets => {
-                for (const [name, data] of Object.entries(widgets)) {
-                    renderWidget(name, data);
-                }
-                currentFeedPage = nextRow;
+            
+            enqueueTeaserRequest(req, () => {
                 isFeedLoading = false;
             });
+            currentFeedPage = nextRow;
         }
     }, { rootMargin: '200px' });
 

@@ -20,13 +20,13 @@ class BaseSchema(BaseModel):
 # Создание отдельных схем для связанных сущностей — лучшая практика.
 # Это позволяет вам точно контролировать, какие данные отдавать по API.
 
-class TagSchema(BaseSchema):
+class TagSchema(BaseModel):
     """Схема для тега."""
     id: int
     code: str
 
 
-class CategorySchema(BaseSchema):
+class CategorySchema(BaseModel):
     """Схема для категории."""
     id: int
     code: str
@@ -42,7 +42,7 @@ class GeoSchema(BaseSchema):
 
 # --- Основные схемы для API ---
 
-class ArticlePreviewSchema(BaseSchema):
+class ArticlePreviewSchema(BaseModel):
     """
     Pydantic-схема для превью статьи.
     Определяет поля, которые будут возвращены клиенту в JSON.
@@ -73,7 +73,7 @@ class ArticlePreviewSchema(BaseSchema):
         return f"{self.created_at:%d-%m-%Y}"
 
 
-class ArticleSchema(BaseSchema):
+class ArticleSchema(BaseModel):
     """
     Pydantic-схема для полной статьи.
     Расширена для включения связанных данных (теги, категории, гео)
@@ -131,7 +131,10 @@ class TeaserResponseSchema(BaseModel):
     """
     widgets: Dict[str, ArticlePreviewSchema]
 
-    # --- НОВОЕ ПОЛЕ ---
-    # Список ID, которые сервер *только что выдал*
-    # и которые клиент должен добавить в долгосрочное хранилище (cookie)
+    # ID тизеров, которые сервер *только что выдал*.
+    # Клиент использует их, чтобы пополнить свой краткосрочный кеш (seen_ids_page).
     newly_served_ids: List[int] = []
+
+    # Обновленный полный список ID для долгосрочного хранения в cookie.
+    # Клиент должен **полностью заменить** старый список в cookie на этот.
+    seen_ids_long_term: List[int] = []
