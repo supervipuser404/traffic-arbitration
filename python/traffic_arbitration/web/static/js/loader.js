@@ -10,7 +10,7 @@ const MAX_COOKIE_IDS = 300;
 const SEEN_IDS_ON_PAGE = new Set(); // Краткосрочная память
 let currentFeedPage = -1;
 const MAX_FEED_ROWS = 100;
-const REQUEST_TIMEOUT_MS = 300;
+const REQUEST_TIMEOUT_MS = 500;
 
 // --- ОЧЕРЕДЬ ЗАПРОСОВ ---
 const teaserRequestQueue = [];
@@ -243,7 +243,8 @@ $(document).ready(function() {
     if ($feed.length) {
         $feed.append('<div id="feed-load-trigger" style="height:1px; width:100%"></div>');
         const cols = getColumns();
-        const rowsToLoad = 2;
+        // const rowsToLoad = 2;
+        const rowsToLoad = Math.max(2, Math.ceil(window.innerHeight / 300));
         for(let r=0; r<rowsToLoad; r++) {
             Object.assign(widgetsToRequest, generatePlaceholders(r, cols));
         }
