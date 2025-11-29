@@ -3,13 +3,12 @@
 {#
   Этот блок определяет заголовок страницы.
 #}
-{% block title %}
+{% block page_title %}
     {% if category %}
         Категория: {{ category }}
     {% else %}
         Главная страница
     {% endif %}
-    :: {{ config.company_name }}
 {% endblock %}
 
 {#
@@ -17,18 +16,12 @@
 #}
 {% block head %}
     {{ super() }}
-    <!--
-      Добавлен ?v=2 для "сброса кэша" браузера.
-      Это заставит браузер загрузить новый CSS с @media-запросами.
-    -->
-    <link rel="stylesheet" href="/static/css/loader.css?v=2">
 {% endblock %}
 
 {#
   Этот блок заменяет основной контент страницы.
 #}
 {% block content %}
-    <main class="main-container">
 
         {% if category %}
             <h1>Категория: {{ category }}</h1>
@@ -44,7 +37,6 @@
             -->
         </div>
 
-    </main>
 {% endblock %}
 
 {#
@@ -53,18 +45,4 @@
 #}
 {% block scripts %}
     {{ super() }} {# Загружает jQuery и fcm.js из layout.html #}
-
-    <!--
-      1. Определяем динамические переменные (из Jinja2),
-         которые нужны внешнему скрипту.
-    -->
-    <script>
-        // Передаем 'category' из Jinja2 в JavaScript
-        window.currentCategory = {{ category | tojson | safe }};
-    </script>
-
-    <!--
-      2. Подключаем основной файл логики ленты
-    -->
-    <script src="/static/js/loader.js"></script>
 {% endblock %}
