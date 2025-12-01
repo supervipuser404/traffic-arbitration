@@ -100,8 +100,8 @@
                 <td>{{ article.source_datetime or '' }}</td>
                 <td>{{ article.is_active }}</td>
                 <td>
-                    <a href="/admin/{{ article.id }}/edit" class="btn btn-sm btn-primary">Edit</a>
-                    <a href="/admin/{{ article.id }}/compare" class="btn btn-sm btn-secondary">Compare</a>
+                    <a href="/admin/articles/{{ article.id }}/edit" class="btn btn-sm btn-primary">Edit</a>
+                    <a href="/admin/articles/{{ article.id }}/compare" class="btn btn-sm btn-secondary">Compare</a>
                 </td>
             </tr>
         {% endfor %}
