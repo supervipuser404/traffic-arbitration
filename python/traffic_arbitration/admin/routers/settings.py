@@ -48,13 +48,29 @@ async def list_categories(
     total = query.count()
     categories = query.order_by(desc(Category.code)).offset((page - 1) * per_page).limit(per_page).all()
     
+    # Рассчитываем статистику
+    from traffic_arbitration.models import ArticleCategory
+    
+    total_categories = db.query(Category).count()
+    categories_with_articles = db.query(Category).join(ArticleCategory).distinct().count()
+    
+    avg_articles = 0
+    if total_categories > 0:
+        total_articles = db.query(ArticleCategory).count()
+        avg_articles = round(total_articles / total_categories, 1)
+    
     return templates.TemplateResponse("settings/categories.html", {
         "request": request,
         "categories": categories,
         "total": total,
         "page": page,
         "per_page": per_page,
-        "search": search
+        "search": search,
+        "stats": {
+            "total": total_categories,
+            "with_articles": categories_with_articles,
+            "avg_articles": avg_articles
+        }
     })
 
 
@@ -380,13 +396,41 @@ async def list_geo(
     total = query.count()
     geo_items = query.order_by(desc(Geo.code)).offset((page - 1) * per_page).limit(per_page).all()
     
+    # Рассчитываем статистику
+    from traffic_arbitration.models import ArticleGeo
+    
+    total_geo = db.query(Geo).count()
+    geo_with_articles = db.query(Geo).join(ArticleGeo).distinct().count()
+    
+    # Самый используемый GEO
+    most_used_geo = db.query(Geo).join(ArticleGeo).group_by(Geo.id).order_by(func.count(ArticleGeo.id).desc()).first()
+    most_used_code = most_used_geo.code if most_used_geo else None
+    
+    avg_articles = 0
+    if total_geo > 0:
+        total_article_geo = db.query(ArticleGeo).count()
+        avg_articles = round(total_article_geo / total_geo, 1)
+    
+    # Добавляем количество статей для каждого geo элемента
+    for geo_item in geo_items:
+        geo_item.article_count = db.query(ArticleGeo).filter(ArticleGeo.geo_id == geo_item.id).count()
+    
+    max_article_count = max([geo_item.article_count for geo_item in geo_items], default=0)
+    
     return templates.TemplateResponse("settings/geo.html", {
         "request": request,
         "geo_items": geo_items,
         "total": total,
         "page": page,
         "per_page": per_page,
-        "search": search
+        "search": search,
+        "stats": {
+            "total": total_geo,
+            "with_articles": geo_with_articles,
+            "most_used_code": most_used_code,
+            "avg_articles": avg_articles,
+            "max_article_count": max_article_count
+        }
     })
 
 
@@ -569,13 +613,40 @@ async def list_tags(
     total = query.count()
     tags = query.order_by(desc(Tag.code)).offset((page - 1) * per_page).limit(per_page).all()
     
+    # Рассчитываем статистику
+    from traffic_arbitration.models import ArticleTag, VisualContentTag
+    
+    total_tags = db.query(Tag).count()
+    tags_with_articles = db.query(Tag).join(ArticleTag).distinct().count()
+    
+    # Популярные теги (теги с более чем 5 статьями)
+    popular_tags_count = db.query(Tag).join(ArticleTag).group_by(Tag.id).having(func.count(ArticleTag.id) > 5).count()
+    
+    avg_usage = 0
+    if total_tags > 0:
+        total_article_tags = db.query(ArticleTag).count()
+        avg_usage = round(total_article_tags / total_tags, 1)
+    
+    # Добавляем количество статей для каждого тега
+    for tag in tags:
+        tag.article_count = db.query(ArticleTag).filter(ArticleTag.tag_id == tag.id).count()
+    
+    max_usage = max([tag.article_count for tag in tags], default=0)
+    
     return templates.TemplateResponse("settings/tags.html", {
         "request": request,
         "tags": tags,
         "total": total,
         "page": page,
         "per_page": per_page,
-        "search": search
+        "search": search,
+        "stats": {
+            "total": total_tags,
+            "with_articles": tags_with_articles,
+            "popular_count": popular_tags_count,
+            "avg_usage": avg_usage,
+            "max_usage": max_usage
+        }
     })
 
 
@@ -715,9 +786,26 @@ async def list_locales(
     logger.info("Listing locales")
     locales = db.query(Locale).order_by(Locale.code).all()
     
+    # Рассчитываем статистику
+    from traffic_arbitration.models import Article
+    
+    total_locales = db.query(Locale).count()
+    active_locales = db.query(Locale).join(Article).distinct().count()
+    default_locale = db.query(Locale).filter(Locale.code == 'en').first()
+    
+    # Добавляем количество статей для каждой локали
+    for locale in locales:
+        locale.article_count = db.query(Article).filter(Article.locale_id == locale.id).count()
+    
     return templates.TemplateResponse("settings/locales.html", {
         "request": request,
-        "locales": locales
+        "locales": locales,
+        "stats": {
+            "total": total_locales,
+            "active": active_locales,
+            "default_code": 'en' if default_locale else None,
+            "default_id": default_locale.id if default_locale else None
+        }
     })
 
 

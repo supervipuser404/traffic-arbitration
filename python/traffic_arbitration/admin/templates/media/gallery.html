@@ -13,6 +13,7 @@
 </div>
 
 <!-- Statistics Cards -->
+{% if stats %}
 <div class="row mb-4">
     <div class="col-md-3">
         <div class="card bg-primary text-white">
@@ -20,7 +21,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Total Files</h5>
-                        <h3>{{ stats.total }}</h3>
+                        <h3>{{ stats.total or 0 }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-files" style="font-size: 2rem;"></i>
@@ -35,7 +36,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Images</h5>
-                        <h3>{{ stats.images }}</h3>
+                        <h3>{{ stats.images or 0 }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-image" style="font-size: 2rem;"></i>
@@ -50,7 +51,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">This Month</h5>
-                        <h3>{{ stats.this_month }}</h3>
+                        <h3>{{ stats.this_month or 0 }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-calendar-month" style="font-size: 2rem;"></i>
@@ -65,7 +66,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Storage Used</h5>
-                        <h3>{{ stats.storage_used }}</h3>
+                        <h3>{{ stats.storage_used or '0 MB' }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-hdd" style="font-size: 2rem;"></i>
@@ -75,6 +76,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Filters -->
 <div class="card mb-4">

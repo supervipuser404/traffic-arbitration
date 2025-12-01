@@ -11,10 +11,10 @@ templates = Jinja2Templates(directory="traffic_arbitration/admin/templates")
 logger.info("Starting Admin Panel")
 
 # Подключение роутеров
-app.include_router(articles.router, prefix="/admin/articles", tags=["articles"])
-app.include_router(settings.router, prefix="/admin/settings", tags=["settings"])
-app.include_router(pipeline.router, prefix="/admin/pipeline", tags=["pipeline"])
-app.include_router(media.router, prefix="/admin/media", tags=["media"])
+app.include_router(articles, prefix="/admin/articles", tags=["articles"])
+app.include_router(settings, prefix="/admin/settings", tags=["settings"])
+app.include_router(pipeline, prefix="/admin/pipeline", tags=["pipeline"])
+app.include_router(media, prefix="/admin/media", tags=["media"])
 
 # Дашборд (главная страница админки)
 @app.get("/admin")

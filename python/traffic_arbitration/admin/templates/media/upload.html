@@ -15,6 +15,7 @@
 </div>
 
 <!-- Upload Statistics -->
+{% if stats %}
 <div class="row mb-4">
     <div class="col-md-4">
         <div class="card bg-primary text-white">
@@ -22,7 +23,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Storage Used</h5>
-                        <h3>{{ stats.storage_used }}</h3>
+                        <h3>{{ stats.storage_used or '0 MB' }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-hdd" style="font-size: 2rem;"></i>
@@ -37,7 +38,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Upload Limit</h5>
-                        <h3>{{ stats.max_file_size }}</h3>
+                        <h3>{{ stats.max_file_size or '10 MB' }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-file-earmark" style="font-size: 2rem;"></i>
@@ -52,7 +53,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Allowed Types</h5>
-                        <h3>{{ stats.allowed_types|length }}</h3>
+                        <h3>{{ stats.allowed_types|length if stats.allowed_types else 0 }}</h3>
                     </div>
                     <div class="align-self-center">
                         <i class="bi bi-file-check" style="font-size: 2rem;"></i>
@@ -62,6 +63,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <div class="row">
     <!-- Upload Form -->
@@ -79,16 +81,16 @@
                                 <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #6c757d;"></i>
                                 <h5 class="mt-3">Drag & Drop Files Here</h5>
                                 <p class="text-muted">or click to select files</p>
-                                <input type="file" id="fileInput" name="files" multiple 
-                                       accept="{{ stats.allowed_types|join(',') }}" style="display: none;">
+                                <input type="file" id="fileInput" name="files" multiple
+                                       accept="{{ stats.allowed_types|join(',') if stats and stats.allowed_types else '*' }}" style="display: none;">
                                 <button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
                                     <i class="bi bi-folder-open me-2"></i>Browse Files
                                 </button>
                             </div>
                         </div>
                         <small class="form-text text-muted">
-                            Maximum file size: {{ stats.max_file_size }}. 
-                            Allowed types: {{ stats.allowed_types|join(', ') }}
+                            Maximum file size: {{ stats.max_file_size if stats else '10 MB' }}.
+                            Allowed types: {{ stats.allowed_types|join(', ') if stats and stats.allowed_types else 'All files' }}
                         </small>
                     </div>
 

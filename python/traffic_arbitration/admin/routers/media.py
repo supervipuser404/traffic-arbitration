@@ -21,7 +21,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="traffic_arbitration/admin/templates")
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/gallery", response_class=HTMLResponse)
 async def list_media(
         request: Request,
         db: Session = Depends(get_db),
@@ -70,6 +70,22 @@ async def list_media(
     ).all()
     extensions = [ext[0] for ext in extensions if ext[0]]
     
+    # Рассчитываем статистику
+    total_files = db.query(VisualContent).count()
+    images_count = db.query(VisualContent).filter(
+        VisualContent.extension.in_(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'])
+    ).count()
+    this_month = db.query(VisualContent).filter(
+        VisualContent.created_at >= datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ).count()
+    storage_used = sum(
+        len(item.data) if item.data else 0
+        for item in db.query(VisualContent).all()
+    )
+    
+    # Конвертируем байты в MB
+    storage_used_mb = round(storage_used / (1024 * 1024), 2)
+    
     return templates.TemplateResponse("media/gallery.html", {
         "request": request,
         "media_items": media_items,
@@ -84,6 +100,12 @@ async def list_media(
             "extension": extension,
             "category_id": category_id,
             "tag_id": tag_id
+        },
+        "stats": {
+            "total": total_files,
+            "images": images_count,
+            "this_month": this_month,
+            "storage_used": f"{storage_used_mb} MB"
         }
     })
 
@@ -100,12 +122,27 @@ async def upload_media_form(
     categories = db.query(Category).all()
     tags = db.query(Tag).all()
     
+    # Рассчитываем статистику для upload формы
+    storage_used = sum(
+        len(item.data) if item.data else 0
+        for item in db.query(VisualContent).all()
+    )
+    storage_used_mb = round(storage_used / (1024 * 1024), 2)
+    max_file_size_mb = 10  # Максимальный размер файла 10MB
+    
+    allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'pdf', 'doc', 'docx', 'txt', 'zip', 'rar']
+    
     return templates.TemplateResponse("media/upload.html", {
         "request": request,
         "categories": categories,
         "tags": tags,
         "media_item": None,
-        "is_edit": False
+        "is_edit": False,
+        "stats": {
+            "storage_used": f"{storage_used_mb} MB",
+            "max_file_size": f"{max_file_size_mb} MB",
+            "allowed_types": allowed_types
+        }
     })
 
 

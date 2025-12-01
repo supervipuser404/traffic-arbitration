@@ -60,6 +60,17 @@ async def list_sources(
     total = query.count()
     sources = query.order_by(desc(ContentSource.created_at)).offset((page - 1) * per_page).limit(per_page).all()
     
+    # Рассчитываем статистику
+    from traffic_arbitration.models import ExternalArticleLink
+    
+    total_sources = db.query(ContentSource).count()
+    active_sources = db.query(ContentSource).filter(ContentSource.is_active == True).count()
+    external_articles_count = db.query(ExternalArticleLink).count()
+    
+    avg_per_source = 0
+    if total_sources > 0:
+        avg_per_source = round(external_articles_count / total_sources, 1)
+    
     return templates.TemplateResponse("pipeline/sources.html", {
         "request": request,
         "sources": sources,
@@ -67,7 +78,13 @@ async def list_sources(
         "page": page,
         "per_page": per_page,
         "search": search,
-        "is_active": is_active
+        "is_active": is_active,
+        "stats": {
+            "total": total_sources,
+            "active": active_sources,
+            "external_articles": external_articles_count,
+            "avg_per_source": avg_per_source
+        }
     })
 
 
@@ -534,13 +551,29 @@ async def list_previews(
     total = query.count()
     previews = query.order_by(desc(ExternalArticlePreview.created_at)).offset((page - 1) * per_page).limit(per_page).all()
     
+    # Рассчитываем статистику
+    total_previews = db.query(ExternalArticlePreview).count()
+    unprocessed_previews = db.query(ExternalArticlePreview).filter(ExternalArticlePreview.is_processed == False).count()
+    processed_previews = db.query(ExternalArticlePreview).filter(ExternalArticlePreview.is_processed == True).count()
+    
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_previews = db.query(ExternalArticlePreview).filter(
+        ExternalArticlePreview.created_at >= today_start
+    ).count()
+    
     return templates.TemplateResponse("pipeline/previews.html", {
         "request": request,
         "previews": previews,
         "total": total,
         "page": page,
         "per_page": per_page,
-        "is_processed": is_processed
+        "is_processed": is_processed,
+        "stats": {
+            "total": total_previews,
+            "unprocessed": unprocessed_previews,
+            "processed": processed_previews,
+            "today": today_previews
+        }
     })
 
 
@@ -596,14 +629,37 @@ async def list_external_articles(
     total = query.count()
     external_articles = query.order_by(desc(ExternalArticle.created_at)).offset((page - 1) * per_page).limit(per_page).all()
     
+    # Рассчитываем статистику
+    total_external_articles = db.query(ExternalArticle).count()
+    processed_external_articles = db.query(ExternalArticle).filter(ExternalArticle.is_processed == True).count()
+    unprocessed_external_articles = db.query(ExternalArticle).filter(ExternalArticle.is_processed == False).count()
+    
     return templates.TemplateResponse("pipeline/external_articles.html", {
         "request": request,
         "external_articles": external_articles,
         "total": total,
         "page": page,
         "per_page": per_page,
-        "is_processed": is_processed
+        "is_processed": is_processed,
+        "stats": {
+            "total": total_external_articles,
+            "processed": processed_external_articles,
+            "unprocessed": unprocessed_external_articles
+        }
     })
+
+
+@router.get("/external-articles", response_class=HTMLResponse)
+async def list_external_articles_alias(
+        request: Request,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials),
+        page: int = 1,
+        per_page: int = 50,
+        is_processed: Optional[str] = "all"
+):
+    """Алиас для списка внешних статей"""
+    return await list_external_articles(request, db, username, page, per_page, is_processed)
 
 
 @router.get("/external/{external_id}/convert", response_class=HTMLResponse)
