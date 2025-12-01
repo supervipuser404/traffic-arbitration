@@ -1,0 +1,685 @@
+{% extends "layouts.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-images"></i> Media Gallery</h1>
+    <div class="btn-group">
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#uploadModal">
+            <i class="bi bi-upload"></i> Upload Files
+        </button>
+        <button type="button" class="btn btn-outline-primary" id="refreshBtn">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Files</h5>
+                        <h3>{{ stats.total }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-files" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Images</h5>
+                        <h3>{{ stats.images }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-image" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">This Month</h5>
+                        <h3>{{ stats.this_month }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-calendar-month" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Storage Used</h5>
+                        <h3>{{ stats.storage_used }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-hdd" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" id="filterForm">
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label">File Type</label>
+                    <select name="file_type" class="form-select">
+                        <option value="">All Types</option>
+                        <option value="image" {% if filters.file_type == "image" %}selected{% endif %}>Images</option>
+                        <option value="video" {% if filters.file_type == "video" %}selected{% endif %}>Videos</option>
+                        <option value="document" {% if filters.file_type == "document" %}selected{% endif %}>Documents</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Extension</label>
+                    <select name="extension" class="form-select">
+                        <option value="">All Extensions</option>
+                        {% for ext in extensions %}
+                            <option value="{{ ext }}" {% if filters.extension == ext %}selected{% endif %}>{{ ext|upper }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ filters.date_from or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ filters.date_to or '' }}">
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <label class="form-label">Search</label>
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="Search by filename..." value="{{ filters.search or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Sort By</label>
+                    <select name="sort" class="form-select">
+                        <option value="created_at" {% if filters.sort == "created_at" %}selected{% endif %}>Date Created</option>
+                        <option value="name" {% if filters.sort == "name" %}selected{% endif %}>Name</option>
+                        <option value="size" {% if filters.sort == "size" %}selected{% endif %}>Size</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2">Filter</button>
+                    <a href="{{ url_for('gallery') }}" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- View Mode Toggle -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-outline-secondary active" id="gridViewBtn">
+            <i class="bi bi-grid"></i> Grid
+        </button>
+        <button type="button" class="btn btn-outline-secondary" id="listViewBtn">
+            <i class="bi bi-list"></i> List
+        </button>
+    </div>
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="showThumbnails" checked>
+        <label class="form-check-label" for="showThumbnails">Show Thumbnails</label>
+    </div>
+</div>
+
+<!-- Files Grid View -->
+<div id="gridView" class="row">
+    {% for file in files %}
+    <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
+        <div class="card h-100 media-card">
+            <div class="position-relative">
+                {% if file.extension.lower() in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] %}
+                    <img src="{{ url_for('serve_media', file_id=file.id) }}" 
+                         class="card-img-top media-thumbnail" 
+                         alt="{{ file.name }}"
+                         style="height: 200px; object-fit: cover;">
+                {% else %}
+                    <div class="d-flex align-items-center justify-content-center bg-light" 
+                         style="height: 200px;">
+                        <div class="text-center">
+                            <i class="bi bi-file-earmark" style="font-size: 3rem; color: #6c757d;"></i>
+                            <p class="mt-2 mb-0 text-muted">{{ file.extension|upper }}</p>
+                        </div>
+                    </div>
+                {% endif %}
+                
+                <!-- File Actions Overlay -->
+                <div class="media-overlay">
+                    <div class="btn-group-vertical">
+                        <button type="button" class="btn btn-light btn-sm" 
+                                data-bs-toggle="modal" data-bs-target="#viewFileModal" 
+                                data-file-id="{{ file.id }}">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button type="button" class="btn btn-light btn-sm" 
+                                onclick="downloadFile('{{ file.id }}')">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button type="button" class="btn btn-light btn-sm" 
+                                data-bs-toggle="modal" data-bs-target="#editFileModal" 
+                                data-file-id="{{ file.id }}">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm" 
+                                onclick="deleteFile('{{ file.id }}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-body">
+                <h6 class="card-title" title="{{ file.name }}">{{ file.name[:30] }}{% if file.name|length > 30 %}...{% endif %}</h6>
+                <p class="card-text">
+                    <small class="text-muted">
+                        <i class="bi bi-hdd"></i> {{ file.size }} bytes<br>
+                        <i class="bi bi-aspect-ratio"></i> {{ file.width }}×{{ file.height }}<br>
+                        <i class="bi bi-calendar"></i> {{ file.created_at.strftime('%Y-%m-%d') }}
+                    </small>
+                </p>
+                
+                <!-- Categories and Tags -->
+                {% if file.categories or file.tags %}
+                <div class="mb-2">
+                    {% for category in file.categories %}
+                        <span class="badge bg-primary">{{ category.code }}</span>
+                    {% endfor %}
+                    {% for tag in file.tags %}
+                        <span class="badge bg-secondary">{{ tag.code }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Files List View -->
+<div id="listView" class="d-none">
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th><i class="bi bi-image"></i> Preview</th>
+                            <th><i class="bi bi-file-earmark"></i> Name</th>
+                            <th><i class="bi bi-hdd"></i> Size</th>
+                            <th><i class="bi bi-aspect-ratio"></i> Dimensions</th>
+                            <th><i class="bi bi-calendar"></i> Created</th>
+                            <th><i class="bi bi-tags"></i> Tags</th>
+                            <th><i class="bi bi-tools"></i> Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for file in files %}
+                        <tr>
+                            <td>
+                                {% if file.extension.lower() in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] %}
+                                    <img src="{{ url_for('serve_media', file_id=file.id) }}" 
+                                         class="img-thumbnail" 
+                                         alt="{{ file.name }}"
+                                         style="width: 60px; height: 40px; object-fit: cover;">
+                                {% else %}
+                                    <i class="bi bi-file-earmark text-muted" style="font-size: 1.5rem;"></i>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ file.name }}</strong>
+                                <br><small class="text-muted">{{ file.extension|upper }}</small>
+                            </td>
+                            <td>{{ file.size }} bytes</td>
+                            <td>{{ file.width }}×{{ file.height }}</td>
+                            <td>{{ file.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>
+                                {% if file.categories or file.tags %}
+                                    {% for category in file.categories %}
+                                        <span class="badge bg-primary">{{ category.code }}</span>
+                                    {% endfor %}
+                                    {% for tag in file.tags %}
+                                        <span class="badge bg-secondary">{{ tag.code }}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">No tags</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-primary" 
+                                            data-bs-toggle="modal" data-bs-target="#viewFileModal" 
+                                            data-file-id="{{ file.id }}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-info" 
+                                            onclick="downloadFile('{{ file.id }}')">
+                                        <i class="bi bi-download"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-warning" 
+                                            data-bs-toggle="modal" data-bs-target="#editFileModal" 
+                                            data-file-id="{{ file.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            onclick="deleteFile('{{ file.id }}')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('gallery', page=1, **request.args) }}">
+                    <i class="bi bi-chevron-double-left"></i> First
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('gallery', page=pagination.prev_num, **request.args) }}">
+                    <i class="bi bi-chevron-left"></i> Previous
+                </a>
+            </li>
+        {% endif %}
+        
+        {% for page_num in pagination.iter_pages() %}
+            {% if page_num %}
+                {% if page_num != pagination.page %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('gallery', page=page_num, **request.args) }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_num }}</span>
+                    </li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link">...</span>
+                </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('gallery', page=pagination.next_num, **request.args) }}">
+                    Next <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('gallery', page=pagination.pages, **request.args) }}">
+                    Last <i class="bi bi-chevron-double-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-upload"></i> Upload Files</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select Files</label>
+                        <input type="file" class="form-control" name="files" multiple 
+                               accept="image/*,video/*,.pdf,.doc,.docx">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Categories</label>
+                        <select name="category_ids" class="form-select" multiple>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{ category.code }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tags</label>
+                        <select name="tag_ids" class="form-select" multiple>
+                            {% for tag in tags %}
+                                <option value="{{ tag.id }}">{{ tag.code }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="progress d-none" id="uploadProgress">
+                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Upload Files</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- View File Modal -->
+<div class="modal fade" id="viewFileModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-eye"></i> View File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="fileContent">
+                <!-- Content will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="copyUrlBtn">
+                    <i class="bi bi-clipboard"></i> Copy URL
+                </button>
+                <button type="button" class="btn btn-info" id="downloadBtn">
+                    <i class="bi bi-download"></i> Download
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit File Modal -->
+<div class="modal fade" id="editFileModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editFileForm">
+                <div class="modal-body" id="editFileContent">
+                    <!-- Content will be loaded here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Update File</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.media-card {
+    transition: transform 0.2s ease-in-out;
+}
+
+.media-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.media-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.media-card:hover .media-overlay {
+    opacity: 1;
+}
+
+.media-thumbnail {
+    transition: transform 0.3s ease;
+}
+
+.media-card:hover .media-thumbnail {
+    transform: scale(1.05);
+}
+
+.bg-primary {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+}
+
+.bg-success {
+    background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+}
+
+.bg-info {
+    background: linear-gradient(45deg, #17a2b8, #138496) !important;
+}
+
+.bg-warning {
+    background: linear-gradient(45deg, #ffc107, #e0a800) !important;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+</style>
+
+<script>
+// View mode toggle
+document.getElementById('gridViewBtn').addEventListener('click', function() {
+    document.getElementById('gridView').classList.remove('d-none');
+    document.getElementById('listView').classList.add('d-none');
+    this.classList.add('active');
+    document.getElementById('listViewBtn').classList.remove('active');
+});
+
+document.getElementById('listViewBtn').addEventListener('click', function() {
+    document.getElementById('gridView').classList.add('d-none');
+    document.getElementById('listView').classList.remove('d-none');
+    this.classList.add('active');
+    document.getElementById('gridViewBtn').classList.remove('active');
+});
+
+// Thumbnail toggle
+document.getElementById('showThumbnails').addEventListener('change', function() {
+    const thumbnails = document.querySelectorAll('.media-thumbnail');
+    thumbnails.forEach(thumb => {
+        thumb.style.display = this.checked ? 'block' : 'none';
+    });
+});
+
+// Upload form
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const progressBar = document.querySelector('.progress-bar');
+    const progressContainer = document.getElementById('uploadProgress');
+    
+    progressContainer.classList.remove('d-none');
+    
+    fetch('/admin/media/upload', {
+        method: 'POST',
+        body: formData,
+        onUploadProgress: function(progressEvent) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            progressBar.style.width = percentCompleted + '%';
+            progressBar.textContent = percentCompleted + '%';
+        }
+    }).then(response => {
+        if (response.ok) {
+            location.reload();
+        }
+    });
+});
+
+// View file modal
+document.getElementById('viewFileModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const fileId = button.getAttribute('data-file-id');
+    
+    fetch(`/admin/media/${fileId}`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#fileContent');
+            const copyBtn = modal.querySelector('#copyUrlBtn');
+            const downloadBtn = modal.querySelector('#downloadBtn');
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-8">
+                        ${data.extension.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|svg)$/) 
+                            ? `<img src="/admin/media/${fileId}" class="img-fluid" alt="${data.name}">`
+                            : `<div class="text-center p-5">
+                                <i class="bi bi-file-earmark" style="font-size: 5rem; color: #6c757d;"></i>
+                                <h5 class="mt-3">${data.extension.toUpperCase()} File</h5>
+                               </div>`
+                        }
+                    </div>
+                    <div class="col-md-4">
+                        <h5>File Information</h5>
+                        <ul class="list-unstyled">
+                            <li><strong>Name:</strong> ${data.name}</li>
+                            <li><strong>Size:</strong> ${data.size} bytes</li>
+                            <li><strong>Type:</strong> ${data.extension.toUpperCase()}</li>
+                            <li><strong>Dimensions:</strong> ${data.width}×${data.height}</li>
+                            <li><strong>Created:</strong> ${data.created_at}</li>
+                            <li><strong>URL:</strong> <code>/admin/media/${fileId}</code></li>
+                        </ul>
+                        
+                        <h6>Categories & Tags</h6>
+                        <div>
+                            ${data.categories.map(cat => `<span class="badge bg-primary me-1">${cat.code}</span>`).join('')}
+                            ${data.tags.map(tag => `<span class="badge bg-secondary me-1">${tag.code}</span>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            copyBtn.onclick = function() {
+                navigator.clipboard.writeText(window.location.origin + `/admin/media/${fileId}`);
+                this.innerHTML = '<i class="bi bi-check"></i> Copied!';
+                setTimeout(() => {
+                    this.innerHTML = '<i class="bi bi-clipboard"></i> Copy URL';
+                }, 2000);
+            };
+            
+            downloadBtn.onclick = function() {
+                downloadFile(fileId);
+            };
+        });
+});
+
+// Edit file modal
+document.getElementById('editFileModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const fileId = button.getAttribute('data-file-id');
+    
+    fetch(`/admin/media/${fileId}`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#editFileContent');
+            const form = modal.querySelector('#editFileForm');
+            
+            content.innerHTML = `
+                <div class="mb-3">
+                    <label class="form-label">File Name</label>
+                    <input type="text" name="name" class="form-control" value="${data.name}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Categories</label>
+                    <select name="category_ids" class="form-select" multiple>
+                        ${data.available_categories.map(cat => 
+                            `<option value="${cat.id}" ${data.categories.some(c => c.id === cat.id) ? 'selected' : ''}>${cat.code}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Tags</label>
+                    <select name="tag_ids" class="form-select" multiple>
+                        ${data.available_tags.map(tag => 
+                            `<option value="${tag.id}" ${data.tags.some(t => t.id === tag.id) ? 'selected' : ''}>${tag.code}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <input type="hidden" name="file_id" value="${fileId}">
+            `;
+            
+            form.action = `/admin/media/${fileId}/edit`;
+        });
+});
+
+// Utility functions
+function downloadFile(fileId) {
+    window.open(`/admin/media/${fileId}/download`, '_blank');
+}
+
+function deleteFile(fileId) {
+    if (confirm('Are you sure you want to delete this file?')) {
+        fetch(`/admin/media/${fileId}/delete`, {
+            method: 'DELETE'
+        }).then(() => {
+            location.reload();
+        });
+    }
+}
+
+// Refresh button
+document.getElementById('refreshBtn').addEventListener('click', function() {
+    location.reload();
+});
+</script>
+{% endblock %}

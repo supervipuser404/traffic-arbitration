@@ -1,0 +1,605 @@
+{% extends "layouts.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-database"></i> Content Sources</h1>
+    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createSourceModal">
+        <i class="bi bi-plus-circle"></i> Add Source
+    </button>
+</div>
+
+<!-- Statistics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Sources</h5>
+                        <h3>{{ stats.total }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-database" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Active Sources</h5>
+                        <h3>{{ stats.active }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-check-circle" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">External Articles</h5>
+                        <h3>{{ stats.external_articles }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-file-earmark-text" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Avg. per Source</h5>
+                        <h3>{{ stats.avg_per_source }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-bar-chart" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row">
+            <div class="col-md-4">
+                <label class="form-label">Search Sources</label>
+                <input type="text" name="search" class="form-control" 
+                       placeholder="Search by name or domain..." value="{{ filters.search or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All Status</option>
+                    <option value="active" {% if filters.status == "active" %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if filters.status == "inactive" %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Sort By</label>
+                <select name="sort" class="form-select">
+                    <option value="name" {% if filters.sort == "name" %}selected{% endif %}>Name</option>
+                    <option value="created_at" {% if filters.sort == "created_at" %}selected{% endif %}>Created Date</option>
+                    <option value="article_count" {% if filters.sort == "article_count" %}selected{% endif %}>Article Count</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">Filter</button>
+                <a href="{{ url_for('content_sources') }}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Sources Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th><i class="bi bi-list-ul"></i> Name</th>
+                        <th><i class="bi bi-globe"></i> Domain</th>
+                        <th><i class="bi bi-gear"></i> Handler</th>
+                        <th><i class="bi bi-flag"></i> Status</th>
+                        <th><i class="bi bi-file-earmark-text"></i> Articles</th>
+                        <th><i class="bi bi-clock"></i> Last Updated</th>
+                        <th><i class="bi bi-tools"></i> Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for source in sources %}
+                    <tr>
+                        <td>
+                            <strong>{{ source.name }}</strong>
+                            {% if source.description %}
+                                <br><small class="text-muted">{{ source.description[:100] }}{% if source.description|length > 100 %}...{% endif %}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <code>{{ source.domain }}</code>
+                            {% if source.aliases %}
+                                <br><small class="text-info">Aliases: {{ source.aliases }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ source.source_handler or 'N/A' }}</span>
+                        </td>
+                        <td>
+                            {% if source.is_active %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set article_count = source.external_articles|length %}
+                            <span class="badge bg-{{ 'success' if article_count > 0 else 'secondary' }}">{{ article_count }}</span>
+                        </td>
+                        <td>
+                            <small>{{ source.updated_at.strftime('%Y-%m-%d %H:%M') if source.updated_at else 'N/A' }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" data-bs-target="#editSourceModal" 
+                                        data-source-id="{{ source.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-info" 
+                                        data-bs-toggle="modal" data-bs-target="#viewSourceModal" 
+                                        data-source-id="{{ source.id }}">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-{% if source.is_active %}warning{% else %}success{% endif %}" 
+                                        onclick="toggleSource('{{ source.id }}')">
+                                    <i class="bi bi-{% if source.is_active %}pause{% else %}play{% endif %}"></i>
+                                </button>
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary dropdown-toggle" 
+                                            data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                            <a class="dropdown-item" href="#" 
+                                               onclick="viewSourceStats('{{ source.id }}')">
+                                                <i class="bi bi-graph-up"></i> Statistics
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="#" 
+                                               onclick="testSource('{{ source.id }}')">
+                                                <i class="bi bi-play-circle"></i> Test Connection
+                                            </a>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        {% if source.external_articles|length == 0 %}
+                                        <li>
+                                            <a class="dropdown-item text-danger" href="#" 
+                                               onclick="deleteSource('{{ source.id }}')">
+                                                <i class="bi bi-trash"></i> Delete
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('content_sources', page=1, **request.args) }}">
+                    <i class="bi bi-chevron-double-left"></i> First
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('content_sources', page=pagination.prev_num, **request.args) }}">
+                    <i class="bi bi-chevron-left"></i> Previous
+                </a>
+            </li>
+        {% endif %}
+        
+        {% for page_num in pagination.iter_pages() %}
+            {% if page_num %}
+                {% if page_num != pagination.page %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('content_sources', page=page_num, **request.args) }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_num }}</span>
+                    </li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link">...</span>
+                </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('content_sources', page=pagination.next_num, **request.args) }}">
+                    Next <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('content_sources', page=pagination.pages, **request.args) }}">
+                    Last <i class="bi bi-chevron-double-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- Create Source Modal -->
+<div class="modal fade" id="createSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Add Content Source</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('create_source') }}">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Source Name *</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="domain" class="form-label">Domain *</label>
+                                <input type="text" class="form-control" id="domain" name="domain" 
+                                       placeholder="example.com" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="source_handler" class="form-label">Source Handler</label>
+                                <select class="form-select" id="source_handler" name="source_handler">
+                                    <option value="">Select handler...</option>
+                                    <option value="iadvert">IAdvert Scraper</option>
+                                    <option value="custom">Custom Handler</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Status</label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="is_active" 
+                                           name="is_active" checked>
+                                    <label class="form-check-label" for="is_active">
+                                        Active source
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3" 
+                                  placeholder="Description of this content source..."></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="aliases" class="form-label">Aliases</label>
+                                <input type="text" class="form-control" id="aliases" name="aliases" 
+                                       placeholder="Alternative domains, comma separated">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="old_domains" class="form-label">Old Domains</label>
+                                <input type="text" class="form-control" id="old_domains" name="old_domains" 
+                                       placeholder="Former domains, comma separated">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Create Source</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Source Modal -->
+<div class="modal fade" id="editSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Content Source</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editSourceForm">
+                <div class="modal-body" id="editSourceContent">
+                    <!-- Content will be loaded here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Update Source</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- View Source Modal -->
+<div class="modal fade" id="viewSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-eye"></i> Source Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewSourceContent">
+                <!-- Content will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.bg-primary {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+}
+
+.bg-success {
+    background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+}
+
+.bg-info {
+    background: linear-gradient(45deg, #17a2b8, #138496) !important;
+}
+
+.bg-warning {
+    background: linear-gradient(45deg, #ffc107, #e0a800) !important;
+}
+
+.card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+</style>
+
+<script>
+// Edit source modal
+document.getElementById('editSourceModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const sourceId = button.getAttribute('data-source-id');
+    
+    fetch(`/admin/settings/content-sources/${sourceId}`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#editSourceContent');
+            const form = modal.querySelector('#editSourceForm');
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_name" class="form-label">Source Name *</label>
+                            <input type="text" class="form-control" id="edit_name" name="name" 
+                                   value="${data.name}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_domain" class="form-label">Domain *</label>
+                            <input type="text" class="form-control" id="edit_domain" name="domain" 
+                                   value="${data.domain}" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_source_handler" class="form-label">Source Handler</label>
+                            <select class="form-select" id="edit_source_handler" name="source_handler">
+                                <option value="">Select handler...</option>
+                                <option value="iadvert" ${data.source_handler === 'iadvert' ? 'selected' : ''}>IAdvert Scraper</option>
+                                <option value="custom" ${data.source_handler === 'custom' ? 'selected' : ''}>Custom Handler</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Status</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="edit_is_active" 
+                                       name="is_active" ${data.is_active ? 'checked' : ''}>
+                                <label class="form-check-label" for="edit_is_active">
+                                    Active source
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="edit_description" class="form-label">Description</label>
+                    <textarea class="form-control" id="edit_description" name="description" rows="3">${data.description || ''}</textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_aliases" class="form-label">Aliases</label>
+                            <input type="text" class="form-control" id="edit_aliases" name="aliases" 
+                                   value="${data.aliases || ''}" placeholder="Alternative domains, comma separated">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_old_domains" class="form-label">Old Domains</label>
+                            <input type="text" class="form-control" id="edit_old_domains" name="old_domains" 
+                                   value="${data.old_domains || ''}" placeholder="Former domains, comma separated">
+                        </div>
+                    </div>
+                </div>
+                <input type="hidden" name="source_id" value="${sourceId}">
+            `;
+            
+            form.action = `/admin/settings/content-sources/${sourceId}/edit`;
+        });
+});
+
+// View source modal
+document.getElementById('viewSourceModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const sourceId = button.getAttribute('data-source-id');
+    
+    fetch(`/admin/settings/content-sources/${sourceId}`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#viewSourceContent');
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>Source Information</h5>
+                        <ul class="list-unstyled">
+                            <li><strong>Name:</strong> ${data.name}</li>
+                            <li><strong>Domain:</strong> ${data.domain}</li>
+                            <li><strong>Handler:</strong> ${data.source_handler || 'N/A'}</li>
+                            <li><strong>Status:</strong> 
+                                <span class="badge bg-${data.is_active ? 'success' : 'danger'}">
+                                    ${data.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                            </li>
+                            <li><strong>Created:</strong> ${data.created_at}</li>
+                            <li><strong>Updated:</strong> ${data.updated_at || 'N/A'}</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Statistics</h5>
+                        <ul class="list-unstyled">
+                            <li><strong>External Articles:</strong> ${data.external_articles ? data.external_articles.length : 0}</li>
+                            <li><strong>External Links:</strong> ${data.external_articles_links ? data.external_articles_links.length : 0}</li>
+                            <li><strong>Previews:</strong> ${data.external_article_previews ? data.external_article_previews.length : 0}</li>
+                        </ul>
+                    </div>
+                </div>
+                ${data.description ? `<hr><h5>Description</h5><p>${data.description}</p>` : ''}
+                ${data.aliases ? `<hr><h5>Aliases</h5><p>${data.aliases}</p>` : ''}
+                ${data.old_domains ? `<hr><h5>Old Domains</h5><p>${data.old_domains}</p>` : ''}
+            `;
+        });
+});
+
+// Toggle source status
+function toggleSource(sourceId) {
+    fetch(`/admin/settings/content-sources/${sourceId}/toggle`, {
+        method: 'POST'
+    }).then(response => {
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Failed to toggle source status. Please try again.');
+        }
+    });
+}
+
+// View source statistics
+function viewSourceStats(sourceId) {
+    window.open(`/admin/settings/content-sources/${sourceId}/stats`, '_blank');
+}
+
+// Test source connection
+function testSource(sourceId) {
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+    button.disabled = true;
+    
+    fetch(`/admin/settings/content-sources/${sourceId}/test`, {
+        method: 'POST'
+    }).then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Connection test successful!');
+        } else {
+            alert('Connection test failed: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(() => {
+        alert('Connection test failed. Please try again.');
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+
+// Delete source
+function deleteSource(sourceId) {
+    if (confirm('Are you sure you want to delete this source? This action cannot be undone.')) {
+        fetch(`/admin/settings/content-sources/${sourceId}/delete`, {
+            method: 'DELETE'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to delete source. Please try again.');
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

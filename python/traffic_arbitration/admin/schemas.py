@@ -402,3 +402,231 @@ class ArticleResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# НОВЫЕ СХЕМЫ ДЛЯ CRUD ОПЕРАЦИЙ
+
+# CategoryLabel схемы
+class CategoryLabelBase(BaseModel):
+    locale: str = Field(default="ru", max_length=8)
+    label: str = Field(..., max_length=128)
+
+    @validator('locale')
+    def validate_locale(cls, v):
+        if not re.match(r'^[a-z]{2,8}$', v):
+            raise ValueError('Код локали должен содержать только строчные буквы')
+        return v
+
+
+class CategoryLabelCreate(CategoryLabelBase):
+    category_id: int
+
+
+class CategoryLabelResponse(CategoryLabelBase):
+    id: int
+    category_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# GeoLabel схемы
+class GeoLabelBase(BaseModel):
+    locale: str = Field(default="ru", max_length=8)
+    label: str = Field(..., max_length=128)
+
+    @validator('locale')
+    def validate_locale(cls, v):
+        if not re.match(r'^[a-z]{2,8}$', v):
+            raise ValueError('Код локали должен содержать только строчные буквы')
+        return v
+
+
+class GeoLabelCreate(GeoLabelBase):
+    geo_id: int
+
+
+class GeoLabelResponse(GeoLabelBase):
+    id: int
+    geo_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Pagination схемы
+class PaginationResponse(BaseModel):
+    page: int
+    per_page: int
+    total: int
+    pages: int
+
+    @property
+    def pages(self):
+        return (self.total + self.per_page - 1) // self.per_page
+
+
+class ListResponse(BaseModel):
+    items: List
+    pagination: PaginationResponse
+
+
+# Схемы для связи Many-to-Many
+class ArticleCategoryCreate(BaseModel):
+    article_id: int
+    category_id: int
+
+
+class ArticleGeoCreate(BaseModel):
+    article_id: int
+    geo_id: int
+
+
+class ArticleTagCreate(BaseModel):
+    article_id: int
+    tag_id: int
+
+
+class VisualContentCategoryCreate(BaseModel):
+    visual_content_id: int
+    category_id: int
+
+
+class VisualContentTagCreate(BaseModel):
+    visual_content_id: int
+    tag_id: int
+
+
+class ExternalArticleLinkCategoryCreate(BaseModel):
+    link_id: int
+    category_id: int
+
+
+# Схемы для связанных данных
+class ArticleWithRelations(BaseModel):
+    id: int
+    title: str
+    text: str
+    slug: str
+    parent_id: Optional[int]
+    external_article_id: Optional[int]
+    locale_id: int
+    image_id: Optional[int]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    source_datetime: Optional[datetime]
+    
+    # Связанные данные
+    categories: List[CategoryResponse] = []
+    geo: List[GeoResponse] = []
+    tags: List[TagResponse] = []
+    locale: Optional[LocaleResponse] = None
+    image: Optional[VisualContentResponse] = None
+    external_article: Optional[ExternalArticleResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+class VisualContentWithRelations(BaseModel):
+    id: int
+    link: Optional[str]
+    name: Optional[str]
+    extension: Optional[str]
+    width: Optional[int]
+    height: Optional[int]
+    created_at: datetime
+    updated_at: datetime
+    
+    # Связанные данные
+    categories: List[CategoryResponse] = []
+    tags: List[TagResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# Схемы для валидации данных форм
+class FormDataBase(BaseModel):
+    """Базовый класс для данных форм"""
+    pass
+
+
+class ContentSourceFormData(FormDataBase):
+    name: str
+    source_handler: Optional[str] = None
+    domain: Optional[str] = None
+    aliases: Optional[str] = None
+    old_domains: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class CategoryFormData(FormDataBase):
+    code: str
+    description: Optional[str] = None
+    labels_json: Optional[str] = None
+
+
+class GeoFormData(FormDataBase):
+    code: str
+    description: Optional[str] = None
+    labels_json: Optional[str] = None
+
+
+class TagFormData(FormDataBase):
+    code: str
+
+
+class LocaleFormData(FormDataBase):
+    code: str
+    name: Optional[str] = None
+
+
+class VisualContentFormData(FormDataBase):
+    name: Optional[str] = None
+    category_ids: Optional[str] = None
+    tag_ids: Optional[str] = None
+
+
+# Схемы для bulk операций
+class BulkDeleteRequest(BaseModel):
+    ids: List[int]
+
+    @validator('ids')
+    def validate_ids(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError('Необходимо указать ID для удаления')
+        return v
+
+
+class BulkResponse(BaseModel):
+    success_count: int
+    error_count: int
+    errors: List[str] = []
+
+
+# Схемы для статистики
+class RelatedCountResponse(BaseModel):
+    """Схема для ответа с количеством связанных записей"""
+    articles: int = 0
+    visual_content: int = 0
+    external_articles_links: int = 0
+    geo: int = 0
+    tags: int = 0
+    locales: int = 0
+    total: int = 0
+
+
+class StatisticsResponse(BaseModel):
+    """Схема для общей статистики"""
+    total_articles: int
+    total_categories: int
+    total_geo: int
+    total_tags: int
+    total_locales: int
+    total_content_sources: int
+    total_visual_content: int
+    total_external_articles: int
+    total_external_article_links: int

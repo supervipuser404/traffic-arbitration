@@ -1,0 +1,419 @@
+{% extends "layouts.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-database"></i> Content Sources</h1>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createSourceModal">
+        <i class="bi bi-plus-circle"></i> Add Source
+    </button>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="searchInput" class="form-control" placeholder="Search sources...">
+        </div>
+    </div>
+    <div class="col-md-3">
+        <select id="statusFilter" class="form-select">
+            <option value="">All Status</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select id="sortSelect" class="form-select">
+            <option value="name">Sort by Name</option>
+            <option value="created_at">Sort by Created</option>
+            <option value="updated_at">Sort by Updated</option>
+        </select>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover" id="sourcesTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th><i class="bi bi-list-ul"></i> Name</th>
+                        <th><i class="bi bi-globe"></i> Domain</th>
+                        <th><i class="bi bi-gear"></i> Handler</th>
+                        <th><i class="bi bi-flag"></i> Status</th>
+                        <th><i class="bi bi-clock"></i> Last Updated</th>
+                        <th><i class="bi bi-graph-up"></i> Stats</th>
+                        <th><i class="bi bi-tools"></i> Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for source in sources %}
+                    <tr>
+                        <td>
+                            <strong>{{ source.name }}</strong>
+                            {% if source.description %}
+                                <br><small class="text-muted">{{ source.description[:100] }}{% if source.description|length > 100 %}...{% endif %}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <code>{{ source.domain }}</code>
+                            {% if source.aliases %}
+                                <br><small class="text-info">Aliases: {{ source.aliases }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ source.source_handler or 'N/A' }}</span>
+                        </td>
+                        <td>
+                            {% if source.is_active %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ source.updated_at.strftime('%Y-%m-%d %H:%M') if source.updated_at else 'N/A' }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-info" title="External Articles">
+                                    {{ source.external_articles_links|length }} <i class="bi bi-file-text"></i>
+                                </button>
+                                <button class="btn btn-outline-warning" title="Previews">
+                                    {{ source.external_article_previews|length }} <i class="bi bi-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-success" title="Processed">
+                                    {{ source.external_articles|length }} <i class="bi bi-check"></i>
+                                </button>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" data-bs-target="#editSourceModal" 
+                                        data-source-id="{{ source.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-info" 
+                                        data-bs-toggle="modal" data-bs-target="#statsSourceModal" 
+                                        data-source-id="{{ source.id }}">
+                                    <i class="bi bi-graph-up"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-{% if source.is_active %}warning{% else %}success{% endif %}" 
+                                        data-bs-toggle="modal" data-bs-target="#toggleSourceModal" 
+                                        data-source-id="{{ source.id }}" 
+                                        data-source-name="{{ source.name }}"
+                                        data-source-status="{{ source.is_active }}">
+                                    <i class="bi bi-{% if source.is_active %}pause{% else %}play{% endif %}"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create Source Modal -->
+<div class="modal fade" id="createSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Add Content Source</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('create_source') }}">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Source Name *</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="domain" class="form-label">Domain *</label>
+                                <input type="text" class="form-control" id="domain" name="domain" 
+                                       placeholder="example.com" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="source_handler" class="form-label">Source Handler</label>
+                                <select class="form-select" id="source_handler" name="source_handler">
+                                    <option value="">Select handler...</option>
+                                    <option value="iadvert">IAdvert Scraper</option>
+                                    <option value="custom">Custom Handler</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Status</label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="is_active" 
+                                           name="is_active" checked>
+                                    <label class="form-check-label" for="is_active">
+                                        Active source
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3" 
+                                  placeholder="Description of this content source..."></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="aliases" class="form-label">Aliases</label>
+                                <input type="text" class="form-control" id="aliases" name="aliases" 
+                                       placeholder="Alternative domains, comma separated">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="old_domains" class="form-label">Old Domains</label>
+                                <input type="text" class="form-control" id="old_domains" name="old_domains" 
+                                       placeholder="Former domains, comma separated">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Source</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Source Modal -->
+<div class="modal fade" id="editSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Content Source</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editSourceForm">
+                <div class="modal-body">
+                    <!-- Form will be populated by JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Update Source</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Toggle Source Modal -->
+<div class="modal fade" id="toggleSourceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Status Change</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to <strong id="actionText"></strong> the source "<span id="sourceName"></span>"?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="confirmToggleBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+
+.modal-header.bg-primary {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+}
+
+.modal-header.bg-warning {
+    background: linear-gradient(45deg, #ffc107, #e0a800) !important;
+}
+</style>
+
+<script>
+// Search and filter functionality
+document.getElementById('searchInput').addEventListener('input', function() {
+    filterTable();
+});
+
+document.getElementById('statusFilter').addEventListener('change', function() {
+    filterTable();
+});
+
+document.getElementById('sortSelect').addEventListener('change', function() {
+    sortTable(this.value);
+});
+
+function filterTable() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter').value;
+    const table = document.getElementById('sourcesTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+    for (let i = 0; i < rows.length; i++) {
+        const name = rows[i].cells[0].textContent.toLowerCase();
+        const domain = rows[i].cells[1].textContent.toLowerCase();
+        const statusBadge = rows[i].cells[3].querySelector('.badge');
+        const isActive = statusBadge.classList.contains('bg-success');
+        
+        let showRow = true;
+        
+        // Search filter
+        if (search && !name.includes(search) && !domain.includes(search)) {
+            showRow = false;
+        }
+        
+        // Status filter
+        if (statusFilter === 'true' && !isActive) showRow = false;
+        if (statusFilter === 'false' && isActive) showRow = false;
+        
+        rows[i].style.display = showRow ? '' : 'none';
+    }
+}
+
+// Modal event handlers
+document.getElementById('editSourceModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const sourceId = button.getAttribute('data-source-id');
+    
+    // Load source data for editing
+    fetch(`/admin/pipeline/sources/${sourceId}/edit`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const form = modal.querySelector('#editSourceForm');
+            const modalBody = modal.querySelector('.modal-body');
+            
+            modalBody.innerHTML = `
+                <input type="hidden" name="source_id" value="${sourceId}">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_name" class="form-label">Source Name *</label>
+                            <input type="text" class="form-control" id="edit_name" name="name" 
+                                   value="${data.name}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_domain" class="form-label">Domain *</label>
+                            <input type="text" class="form-control" id="edit_domain" name="domain" 
+                                   value="${data.domain}" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_source_handler" class="form-label">Source Handler</label>
+                            <select class="form-select" id="edit_source_handler" name="source_handler">
+                                <option value="">Select handler...</option>
+                                <option value="iadvert" ${data.source_handler === 'iadvert' ? 'selected' : ''}>IAdvert Scraper</option>
+                                <option value="custom" ${data.source_handler === 'custom' ? 'selected' : ''}>Custom Handler</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Status</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="edit_is_active" 
+                                       name="is_active" ${data.is_active ? 'checked' : ''}>
+                                <label class="form-check-label" for="edit_is_active">
+                                    Active source
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="edit_description" class="form-label">Description</label>
+                    <textarea class="form-control" id="edit_description" name="description" rows="3">${data.description || ''}</textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_aliases" class="form-label">Aliases</label>
+                            <input type="text" class="form-control" id="edit_aliases" name="aliases" 
+                                   value="${data.aliases || ''}" placeholder="Alternative domains, comma separated">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="edit_old_domains" class="form-label">Old Domains</label>
+                            <input type="text" class="form-control" id="edit_old_domains" name="old_domains" 
+                                   value="${data.old_domains || ''}" placeholder="Former domains, comma separated">
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            form.action = `/admin/pipeline/sources/${sourceId}/edit`;
+        });
+});
+
+document.getElementById('toggleSourceModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const sourceId = button.getAttribute('data-source-id');
+    const sourceName = button.getAttribute('data-source-name');
+    const isActive = button.getAttribute('data-source-status') === 'true';
+    
+    const modal = this;
+    const actionText = modal.querySelector('#actionText');
+    const sourceNameSpan = modal.querySelector('#sourceName');
+    const confirmBtn = modal.querySelector('#confirmToggleBtn');
+    
+    if (isActive) {
+        actionText.textContent = 'deactivate';
+        confirmBtn.textContent = 'Deactivate';
+        confirmBtn.className = 'btn btn-warning';
+    } else {
+        actionText.textContent = 'activate';
+        confirmBtn.textContent = 'Activate';
+        confirmBtn.className = 'btn btn-success';
+    }
+    
+    sourceNameSpan.textContent = sourceName;
+    
+    confirmBtn.onclick = function() {
+        fetch(`/admin/pipeline/sources/${sourceId}/toggle`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        }).then(() => {
+            location.reload();
+        });
+    };
+});
+</script>
+{% endblock %}
