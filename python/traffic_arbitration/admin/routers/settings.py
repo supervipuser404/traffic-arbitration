@@ -4,6 +4,10 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional
 from traffic_arbitration.models import Category, Geo, Tag, Locale
+from traffic_arbitration.admin.schemas import (
+    CategoryCreate, CategoryResponse, GeoCreate, GeoResponse,
+    TagCreate, TagResponse, LocaleCreate, LocaleUpdate, LocaleResponse
+)
 from traffic_arbitration.admin.dependencies import verify_credentials, get_db
 from traffic_arbitration.common.logging import logger
 

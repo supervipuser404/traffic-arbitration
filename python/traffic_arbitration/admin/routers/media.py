@@ -8,6 +8,7 @@ from PIL import Image
 import io
 from datetime import datetime
 from traffic_arbitration.models import VisualContent
+from traffic_arbitration.admin.schemas import VisualContentCreate, VisualContentUpdate, VisualContentResponse
 from traffic_arbitration.admin.dependencies import verify_credentials, get_db
 from traffic_arbitration.common.logging import logger
 
