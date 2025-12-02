@@ -1,0 +1,369 @@
+{% extends "layouts.html" %}
+
+{% block title %}Dashboard - Traffic Arbitration Admin{% endblock %}
+
+{% block breadcrumb %}
+    <li class="breadcrumb-item active">Dashboard</li>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="bi bi-speedometer2 me-2"></i>Admin Dashboard
+    </h1>
+    <div>
+        <span class="badge bg-primary fs-6">
+            <i class="bi bi-calendar3 me-1"></i>{{ current_time }}
+        </span>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Articles
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">
+                            {{ stats.total_articles or 0 }}
+                        </div>
+                        <div class="text-xs text-muted">
+                            {{ stats.active_articles or 0 }} active
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-file-earmark-text text-primary" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/admin/articles" class="btn btn-sm btn-outline-primary">
+                    View All <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Content Sources
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">
+                            {{ stats.content_sources or 0 }}
+                        </div>
+                        <div class="text-xs text-muted">
+                            {{ stats.active_sources or 0 }} active
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-database text-success" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/admin/pipeline/sources" class="btn btn-sm btn-outline-success">
+                    Manage <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-info shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Media Files
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">
+                            {{ stats.visual_content or 0 }}
+                        </div>
+                        <div class="text-xs text-muted">
+                            {{ stats.media_categories or 0 }} categories
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-images text-info" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/admin/media/gallery" class="btn btn-sm btn-outline-info">
+                    View Gallery <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            External Articles
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">
+                            {{ stats.external_articles or 0 }}
+                        </div>
+                        <div class="text-xs text-muted">
+                            {{ stats.unprocessed_articles or 0 }} unprocessed
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-globe text-warning" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/admin/pipeline/external-articles" class="btn btn-sm btn-outline-warning">
+                    Review <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pipeline Status -->
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-arrow-repeat me-2"></i>Content Pipeline Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span>External Links</span>
+                            <span class="badge bg-info">{{ stats.external_links or 0 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span>Processed Links</span>
+                            <span class="badge bg-success">{{ stats.processed_links or 0 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span>Pending Links</span>
+                            <span class="badge bg-warning">{{ stats.pending_links or 0 }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span>Article Previews</span>
+                            <span class="badge bg-info">{{ stats.article_previews or 0 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span>Active Previews</span>
+                            <span class="badge bg-success">{{ stats.active_previews or 0 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span>Total Categories</span>
+                            <span class="badge bg-secondary">{{ stats.categories or 0 }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Progress Bars -->
+                <div class="mt-4">
+                    <h6 class="mb-3">Processing Progress</h6>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <small>External Links Processed</small>
+                            <small>{{ (stats.processed_links / (stats.external_links if stats.external_links > 0 else 1) * 100) | round(1) }}%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            {% set links_progress = (stats.processed_links / (stats.external_links if stats.external_links > 0 else 1) * 100) | round(1) %}
+                            <div class="progress-bar bg-success" style="width: {{ links_progress }}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <small>External Articles Processed</small>
+                            <small>{{ (stats.processed_articles / (stats.external_articles if stats.external_articles > 0 else 1) * 100) | round(1) }}%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            {% set progress = (stats.processed_articles / (stats.external_articles if stats.external_articles > 0 else 1) * 100) | round(1) %}
+                            <div class="progress-bar bg-info" style="width: {{ progress }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="col-lg-4">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-lightning me-2"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="/admin/articles/create" class="btn btn-outline-primary">
+                        <i class="bi bi-plus-circle me-2"></i>Create Article
+                    </a>
+                    <a href="/admin/pipeline/sources" class="btn btn-outline-info">
+                        <i class="bi bi-database me-2"></i>Add Content Source
+                    </a>
+                    <a href="/admin/media/upload" class="btn btn-outline-warning">
+                        <i class="bi bi-upload me-2"></i>Upload Media
+                    </a>
+                    <a href="/admin/pipeline/previews" class="btn btn-outline-success">
+                        <i class="bi bi-eye me-2"></i>Review Previews
+                    </a>
+                </div>
+                
+                <!-- System Status -->
+                <div class="mt-4">
+                    <h6 class="mb-3">System Status</h6>
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <div class="text-success">
+                                <i class="bi bi-check-circle-fill fs-4"></i>
+                                <div class="small">Online</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-info">
+                                <i class="bi bi-database-fill fs-4"></i>
+                                <div class="small">Database</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-warning">
+                                <i class="bi bi-gear-fill fs-4"></i>
+                                <div class="small">API</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>Recent Activity
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_activity %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for activity in recent_activity %}
+                                    <tr>
+                                        <td>
+                                            <span class="badge bg-{{ activity.type_color or 'secondary' }}">
+                                                {{ activity.type }}
+                                            </span>
+                                        </td>
+                                        <td>{{ activity.description }}</td>
+                                        <td>
+                                            {% if activity.status == 'completed' %}
+                                                <span class="badge bg-success">Completed</span>
+                                            {% elif activity.status == 'pending' %}
+                                                <span class="badge bg-warning">Pending</span>
+                                            {% elif activity.status == 'failed' %}
+                                                <span class="badge bg-danger">Failed</span>
+                                            {% else %}
+                                                <span class="badge bg-info">{{ activity.status }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">{{ activity.time_ago }}</small>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-info-circle text-muted" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-3">No recent activity to display</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Custom Styles -->
+<style>
+.border-left-primary {
+    border-left: 0.25rem solid #4e73df !important;
+}
+
+.border-left-success {
+    border-left: 0.25rem solid #1cc88a !important;
+}
+
+.border-left-info {
+    border-left: 0.25rem solid #36b9cc !important;
+}
+
+.border-left-warning {
+    border-left: 0.25rem solid #f6c23e !important;
+}
+
+.card-footer {
+    padding: 0.75rem 1.25rem;
+}
+
+.progress {
+    background-color: #eaecf4;
+}
+
+.badge {
+    font-weight: 500;
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh dashboard data every 5 minutes
+    setInterval(function() {
+        location.reload();
+    }, 300000);
+    
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+</script>
+{% endblock %}

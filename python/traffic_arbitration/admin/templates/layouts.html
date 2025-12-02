@@ -73,7 +73,7 @@
         <div class="container-fluid">
             <a class="navbar-brand d-flex align-items-center" href="/admin">
                 <i class="bi bi-speedometer2 me-2"></i>
-                Admin Panel
+                Traffic Arbitration Admin
             </a>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -299,11 +299,16 @@
             
             navLinks.forEach(link => {
                 const href = link.getAttribute('href');
-                if (href && currentPath.startsWith(href) && href !== '/admin') {
-                    link.classList.add('active');
-                    const parentDropdown = link.closest('.dropdown');
-                    if (parentDropdown) {
-                        parentDropdown.querySelector('.dropdown-toggle').classList.add('active');
+                if (href) {
+                    // Special handling for dashboard home page
+                    if (href === '/admin' && (currentPath === '/admin' || currentPath === '/')) {
+                        link.classList.add('active');
+                    } else if (href !== '/admin' && currentPath.startsWith(href)) {
+                        link.classList.add('active');
+                        const parentDropdown = link.closest('.dropdown');
+                        if (parentDropdown) {
+                            parentDropdown.querySelector('.dropdown-toggle').classList.add('active');
+                        }
                     }
                 }
             });
