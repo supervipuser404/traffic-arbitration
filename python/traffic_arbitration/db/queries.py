@@ -1,11 +1,14 @@
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, update, delete, bindparam
+from sqlalchemy import select, func, update, delete, bindparam, desc, or_, and_
 from sqlalchemy.dialects.postgresql import insert
 from traffic_arbitration.models import (
     ContentSource, ExternalArticleLink, ExternalArticlePreview, ExternalArticle,
-    VisualContent, Category, ExternalArticleLinkCategory, Article, ArticleCategory
+    VisualContent, Category, ExternalArticleLinkCategory, Article, ArticleCategory,
+    Geo, Tag, Locale, CategoryLabel, GeoLabel,
+    ArticleGeo, ArticleTag, VisualContentCategory, VisualContentTag,
+    ExternalArticleLinkCategory, VisualContentCategory, VisualContentTag
 )
 from traffic_arbitration.common.utils import unify_str_values
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -542,3 +545,353 @@ def get_article_by_slug(session: Session, article_slug: str) -> Optional[Article
     )
     result = session.execute(stmt).scalar_one_or_none()
     return result
+
+
+# ================================
+# НОВЫЕ ФУНКЦИИ ДЛЯ CRUD ОПЕРАЦИЙ
+# ================================
+
+def get_content_sources_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    search: Optional[str] = None,
+    is_active: Optional[str] = "all"
+) -> Tuple[List[ContentSource], int]:
+    """
+    Получение источников контента с пагинацией и фильтрацией.
+    
+    Args:
+        session: SQLAlchemy сессия.
+        page: Номер страницы.
+        per_page: Количество элементов на странице.
+        search: Поисковый запрос.
+        is_active: Фильтр по активности ("all", "true", "false").
+        
+    Returns:
+        Кортеж (список источников, общее количество).
+    """
+    query = select(ContentSource)
+    
+    # Фильтрация по статусу
+    if is_active != "all":
+        query = query.where(ContentSource.is_active == (is_active == "true"))
+    
+    # Поиск по имени и домену
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                ContentSource.name.ilike(search_pattern),
+                ContentSource.domain.ilike(search_pattern),
+                ContentSource.description.ilike(search_pattern)
+            )
+        )
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(ContentSource.created_at)).offset((page - 1) * per_page).limit(per_page)
+    sources = session.execute(query).scalars().all()
+    
+    return sources, total
+
+
+def get_external_article_links_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    source_id: Optional[int] = None,
+    is_processed: Optional[str] = "all"
+) -> Tuple[List[ExternalArticleLink], int]:
+    """
+    Получение ссылок на внешние статьи с пагинацией и фильтрацией.
+    """
+    query = select(ExternalArticleLink).join(ContentSource)
+    
+    # Фильтрация
+    if source_id:
+        query = query.where(ExternalArticleLink.source_id == source_id)
+    
+    if is_processed != "all":
+        query = query.where(ExternalArticleLink.is_processed == (is_processed == "true"))
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(ExternalArticleLink.created_at)).offset((page - 1) * per_page).limit(per_page)
+    links = session.execute(query).scalars().all()
+    
+    return links, total
+
+
+def get_external_article_previews_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    is_processed: Optional[str] = "all"
+) -> Tuple[List[ExternalArticlePreview], int]:
+    """
+    Получение превью статей с пагинацией и фильтрацией.
+    """
+    query = select(ExternalArticlePreview).join(ExternalArticleLink)
+    
+    if is_processed != "all":
+        query = query.where(ExternalArticlePreview.is_processed == (is_processed == "true"))
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(ExternalArticlePreview.created_at)).offset((page - 1) * per_page).limit(per_page)
+    previews = session.execute(query).scalars().all()
+    
+    return previews, total
+
+
+def get_external_articles_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    is_processed: Optional[str] = "all"
+) -> Tuple[List[ExternalArticle], int]:
+    """
+    Получение внешних статей с пагинацией и фильтрацией.
+    """
+    query = select(ExternalArticle).join(ExternalArticleLink).join(ContentSource)
+    
+    if is_processed != "all":
+        query = query.where(ExternalArticle.is_processed == (is_processed == "true"))
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(ExternalArticle.created_at)).offset((page - 1) * per_page).limit(per_page)
+    external_articles = session.execute(query).scalars().all()
+    
+    return external_articles, total
+
+
+def get_visual_content_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    search: Optional[str] = None,
+    extension: Optional[str] = None,
+    category_id: Optional[int] = None,
+    tag_id: Optional[int] = None
+) -> Tuple[List[VisualContent], int]:
+    """
+    Получение медиа-файлов с пагинацией и фильтрацией.
+    """
+    query = select(VisualContent)
+    
+    # Поиск по имени
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(VisualContent.name.ilike(search_pattern))
+    
+    # Фильтрация по расширению
+    if extension:
+        query = query.where(VisualContent.extension == extension.lower())
+    
+    # Фильтрация по категориям
+    if category_id:
+        query = query.join(VisualContentCategory).where(
+            VisualContentCategory.category_id == category_id
+        )
+    
+    # Фильтрация по тегам
+    if tag_id:
+        query = query.join(VisualContentTag).where(
+            VisualContentTag.tag_id == tag_id
+        )
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(VisualContent.created_at)).offset((page - 1) * per_page).limit(per_page)
+    media_items = session.execute(query).scalars().all()
+    
+    return media_items, total
+
+
+def get_categories_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    search: Optional[str] = None
+) -> Tuple[List[Category], int]:
+    """
+    Получение категорий с пагинацией и поиском.
+    """
+    query = select(Category)
+    
+    # Поиск по коду и описанию
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                Category.code.ilike(search_pattern),
+                Category.description.ilike(search_pattern)
+            )
+        )
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(Category.code)).offset((page - 1) * per_page).limit(per_page)
+    categories = session.execute(query).scalars().all()
+    
+    return categories, total
+
+
+def get_geo_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    search: Optional[str] = None
+) -> Tuple[List[Geo], int]:
+    """
+    Получение географических меток с пагинацией и поиском.
+    """
+    query = select(Geo)
+    
+    # Поиск по коду и описанию
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                Geo.code.ilike(search_pattern),
+                Geo.description.ilike(search_pattern)
+            )
+        )
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(Geo.code)).offset((page - 1) * per_page).limit(per_page)
+    geo_items = session.execute(query).scalars().all()
+    
+    return geo_items, total
+
+
+def get_tags_with_pagination(
+    session: Session,
+    page: int = 1,
+    per_page: int = 50,
+    search: Optional[str] = None
+) -> Tuple[List[Tag], int]:
+    """
+    Получение тегов с пагинацией и поиском.
+    """
+    query = select(Tag)
+    
+    # Поиск по коду
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(Tag.code.ilike(search_pattern))
+    
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar()
+    query = query.order_by(desc(Tag.code)).offset((page - 1) * per_page).limit(per_page)
+    tags = session.execute(query).scalars().all()
+    
+    return tags, total
+
+
+def get_category_related_count(session: Session, category_id: int) -> Dict[str, int]:
+    """
+    Подсчет связанных записей для категории.
+    """
+    article_categories_count = session.execute(
+        select(func.count()).select_from(ArticleCategory).where(ArticleCategory.category_id == category_id)
+    ).scalar()
+    
+    visual_content_categories_count = session.execute(
+        select(func.count()).select_from(VisualContentCategory).where(VisualContentCategory.category_id == category_id)
+    ).scalar()
+    
+    external_article_link_categories_count = session.execute(
+        select(func.count()).select_from(ExternalArticleLinkCategory).where(ExternalArticleLinkCategory.category_id == category_id)
+    ).scalar()
+    
+    return {
+        "articles": article_categories_count,
+        "visual_content": visual_content_categories_count,
+        "external_articles_links": external_article_link_categories_count,
+        "total": article_categories_count + visual_content_categories_count + external_article_link_categories_count
+    }
+
+
+def get_geo_related_count(session: Session, geo_id: int) -> Dict[str, int]:
+    """
+    Подсчет связанных записей для географической метки.
+    """
+    article_geo_count = session.execute(
+        select(func.count()).select_from(ArticleGeo).where(ArticleGeo.geo_id == geo_id)
+    ).scalar()
+    
+    return {
+        "articles": article_geo_count,
+        "total": article_geo_count
+    }
+
+
+def get_tag_related_count(session: Session, tag_id: int) -> Dict[str, int]:
+    """
+    Подсчет связанных записей для тега.
+    """
+    article_tags_count = session.execute(
+        select(func.count()).select_from(ArticleTag).where(ArticleTag.tag_id == tag_id)
+    ).scalar()
+    
+    visual_content_tags_count = session.execute(
+        select(func.count()).select_from(VisualContentTag).where(VisualContentTag.tag_id == tag_id)
+    ).scalar()
+    
+    return {
+        "articles": article_tags_count,
+        "visual_content": visual_content_tags_count,
+        "total": article_tags_count + visual_content_tags_count
+    }
+
+
+def get_locale_related_count(session: Session, locale_id: int) -> Dict[str, int]:
+    """
+    Подсчет связанных записей для локали.
+    """
+    articles_count = session.execute(
+        select(func.count()).select_from(Article).where(Article.locale_id == locale_id)
+    ).scalar()
+    
+    return {
+        "articles": articles_count,
+        "total": articles_count
+    }
+
+
+def get_content_source_related_count(session: Session, source_id: int) -> Dict[str, int]:
+    """
+    Подсчет связанных записей для источника контента.
+    """
+    external_articles_links_count = session.execute(
+        select(func.count()).select_from(ExternalArticleLink).where(ExternalArticleLink.source_id == source_id)
+    ).scalar()
+    
+    return {
+        "external_articles_links": external_articles_links_count,
+        "total": external_articles_links_count
+    }
+
+
+def get_category_labels(session: Session, category_id: int) -> List[CategoryLabel]:
+    """
+    Получение меток для категории.
+    """
+    return session.execute(
+        select(CategoryLabel).where(CategoryLabel.category_id == category_id)
+    ).scalars().all()
+
+
+def get_geo_labels(session: Session, geo_id: int) -> List[GeoLabel]:
+    """
+    Получение меток для географической метки.
+    """
+    return session.execute(
+        select(GeoLabel).where(GeoLabel.geo_id == geo_id)
+    ).scalars().all()
+
+
+def get_unique_extensions(session: Session) -> List[str]:
+    """
+    Получение списка уникальных расширений файлов.
+    """
+    extensions = session.execute(
+        select(VisualContent.extension).distinct().where(VisualContent.extension.isnot(None))
+    ).scalars().all()
+    return [ext for ext in extensions if ext]

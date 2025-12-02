@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from traffic_arbitration.db.connection import get_session
 from dotenv import load_dotenv
+import bcrypt
 from traffic_arbitration.common.logging import logger
 from traffic_arbitration.common.config import config
 

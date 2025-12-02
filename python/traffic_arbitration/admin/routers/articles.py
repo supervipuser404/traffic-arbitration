@@ -2,16 +2,16 @@ from fastapi import APIRouter, Depends, Request, HTTPException, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timedelta
 from PIL import Image
 import io
 import requests
+import re
 from traffic_arbitration.models import Article, ExternalArticle, Locale, Category, Geo, Tag, VisualContent, \
     ExternalArticlePreview, ContentSource, ExternalArticleLink, ArticleCategory, ArticleGeo, ArticleTag
-from .dependencies import verify_credentials, get_db
-from .schemas import ArticleCreate, ArticleResponse, CategoryCreate, GeoCreate, TagCreate
+from traffic_arbitration.admin.schemas import ArticleCreate, ArticleUpdate, ArticleResponse
+from traffic_arbitration.admin.dependencies import verify_credentials, get_db
 from traffic_arbitration.common.logging import logger
 
 router = APIRouter()
@@ -117,7 +117,8 @@ async def list_articles(
 
 @router.get("/create", response_class=HTMLResponse)
 async def create_article_form(request: Request, db: Session = Depends(get_db),
-                              username: str = Depends(verify_credentials)):
+                              username: str = Depends(verify_credentials),
+                              external_article_id: Optional[int] = None):
     logger.info("Accessing create article form")
     locales = db.query(Locale).all()
     sources = db.query(ContentSource).all()
@@ -126,6 +127,11 @@ async def create_article_form(request: Request, db: Session = Depends(get_db),
     tags = db.query(Tag).all()
     articles = db.query(Article).all()
     external_articles = db.query(ExternalArticle).all()
+    
+    external_article = None
+    if external_article_id:
+        external_article = db.query(ExternalArticle).get(external_article_id)
+    
     return templates.TemplateResponse("articles/form.html", {
         "request": request,
         "locales": locales,
@@ -136,7 +142,10 @@ async def create_article_form(request: Request, db: Session = Depends(get_db),
         "articles": articles,
         "external_articles": external_articles,
         "article": None,
-        "external_article": None
+        "external_article": external_article,
+        "form_data": {
+            "external_article_id": external_article_id
+        } if external_article_id else None
     })
 
 
@@ -147,6 +156,7 @@ async def create_article(
         username: str = Depends(verify_credentials),
         title: str = Form(...),
         text: str = Form(...),
+        slug: Optional[str] = Form(None),
         locale_id: int = Form(...),
         parent_id: Optional[int] = Form(None),
         external_article_id: Optional[int] = Form(None),
@@ -165,40 +175,44 @@ async def create_article(
     geo_ids_list = [int(x) for x in geo_ids.split(",") if x] if geo_ids else []
     tag_ids_list = [int(x) for x in tag_ids.split(",") if x] if tag_ids else []
 
+    # Валидация и создание slug
+    slug_value = slug
+    if not slug_value:
+        # Генерируем slug из заголовка
+        import re
+        from traffic_arbitration.common.utils import transliterate
+        slug_value = transliterate(title)
+        slug_value = re.sub(r'[^a-z0-9-]', '-', slug_value.lower())
+        slug_value = re.sub(r'-+', '-', slug_value).strip('-')
+        
+        # Проверяем уникальность и добавляем суффикс при необходимости
+        base_slug = slug_value[:120]  # Максимум 120 символов для базовой части
+        counter = 1
+        while True:
+            test_slug = f"{base_slug}-{counter}" if counter > 1 else base_slug
+            existing = db.query(Article).filter(Article.slug == test_slug).first()
+            if not existing:
+                slug_value = test_slug
+                break
+            counter += 1
+    else:
+        # Проверяем уникальность указанного slug
+        existing = db.query(Article).filter(Article.slug == slug_value).first()
+        if existing:
+            errors.append("Slug уже используется другой статьей")
+            slug_value = None
+
+    # Обработка изображений
     if image_file and image_file.filename:
         try:
             image_data = await image_file.read()
-            image = Image.open(io.BytesIO(image_data))
-            extension = image_file.filename.split(".")[-1].lower()
-            name = image_file.filename
-            visual_content = VisualContent(
-                data=image_data,
-                name=name,
-                extension=extension,
-                width=image.width,
-                height=image.height,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
-            db.add(visual_content)
-            db.flush()
-            image_id = visual_content.id
-            logger.info(f"Image file uploaded: id={image_id}, name={name}")
-        except Exception as e:
-            errors.append(f"Failed to process image file: {str(e)}")
-            logger.error(f"Image file processing failed: {str(e)}")
-    elif image_url:
-        try:
-            response = requests.get(image_url, timeout=10)
-            response.raise_for_status()
-            image_data = response.content
-            image = Image.open(io.BytesIO(image_data))
-            extension = image_url.split(".")[-1].lower() if "." in image_url else "jpg"
-            name = image_url.split("/")[-1]
-            existing_visual = db.query(VisualContent).filter(VisualContent.link == image_url).first()
-            if not existing_visual:
+            if len(image_data) > 10 * 1024 * 1024:  # 10MB
+                errors.append("Размер файла не должен превышать 10MB")
+            else:
+                image = Image.open(io.BytesIO(image_data))
+                extension = image_file.filename.split(".")[-1].lower()
+                name = image_file.filename
                 visual_content = VisualContent(
-                    link=image_url,
                     data=image_data,
                     name=name,
                     extension=extension,
@@ -210,10 +224,51 @@ async def create_article(
                 db.add(visual_content)
                 db.flush()
                 image_id = visual_content.id
-                logger.info(f"Image from URL uploaded: id={image_id}, url={image_url}")
+                logger.info(f"Image file uploaded: id={image_id}, name={name}")
+        except Exception as e:
+            errors.append(f"Failed to process image file: {str(e)}")
+            logger.error(f"Image file processing failed: {str(e)}")
+    elif image_url:
+        try:
+            # Валидация URL
+            url_pattern = re.compile(
+                r'^https?://'  # http:// or https://
+                r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+                r'localhost|'  # localhost...
+                r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+                r'(?::\d+)?'  # optional port
+                r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+            if not url_pattern.match(image_url):
+                errors.append("Некорректный URL изображения")
             else:
-                image_id = existing_visual.id
-                logger.info(f"Existing image found: id={image_id}, url={image_url}")
+                response = requests.get(image_url, timeout=10)
+                response.raise_for_status()
+                image_data = response.content
+                if len(image_data) > 10 * 1024 * 1024:  # 10MB
+                    errors.append("Размер изображения не должен превышать 10MB")
+                else:
+                    image = Image.open(io.BytesIO(image_data))
+                    extension = image_url.split(".")[-1].lower() if "." in image_url else "jpg"
+                    name = image_url.split("/")[-1]
+                    existing_visual = db.query(VisualContent).filter(VisualContent.link == image_url).first()
+                    if not existing_visual:
+                        visual_content = VisualContent(
+                            link=image_url,
+                            data=image_data,
+                            name=name,
+                            extension=extension,
+                            width=image.width,
+                            height=image.height,
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow()
+                        )
+                        db.add(visual_content)
+                        db.flush()
+                        image_id = visual_content.id
+                        logger.info(f"Image from URL uploaded: id={image_id}, url={image_url}")
+                    else:
+                        image_id = existing_visual.id
+                        logger.info(f"Existing image found: id={image_id}, url={image_url}")
         except Exception as e:
             errors.append(f"Failed to load image from URL: {str(e)}")
             logger.error(f"Image URL loading failed: {str(e)}")
@@ -235,9 +290,46 @@ async def create_article(
     else:
         external_article = None
 
+    if errors:
+        locales = db.query(Locale).all()
+        sources = db.query(ContentSource).all()
+        categories = db.query(Category).all()
+        geo_tags = db.query(Geo).all()
+        tags = db.query(Tag).all()
+        articles = db.query(Article).all()
+        external_articles = db.query(ExternalArticle).all()
+        return templates.TemplateResponse("articles/form.html", {
+            "request": request,
+            "errors": errors,
+            "article": None,
+            "locales": locales,
+            "sources": sources,
+            "categories": categories,
+            "geo_tags": geo_tags,
+            "tags": tags,
+            "articles": articles,
+            "external_articles": external_articles,
+            "external_article": None,
+            "form_data": {
+                "title": title,
+                "text": text,
+                "slug": slug,
+                "locale_id": locale_id,
+                "parent_id": parent_id,
+                "external_article_id": external_article_id,
+                "is_active": is_active,
+                "source_datetime": source_datetime,
+                "image_url": image_url,
+                "category_ids": category_ids_list,
+                "geo_ids": geo_ids_list,
+                "tag_ids": tag_ids_list
+            }
+        })
+
     article = Article(
         title=title,
         text=text,
+        slug=slug_value,
         parent_id=parent_id,
         external_article_id=external_article_id,
         locale_id=locale_id,
@@ -259,7 +351,7 @@ async def create_article(
 
     try:
         db.commit()
-        logger.info(f"Article created successfully: id={article.id}")
+        logger.info(f"Article created successfully: id={article.id}, slug={slug_value}")
     except Exception as e:
         db.rollback()
         errors.append(f"Failed to save article: {str(e)}")
@@ -287,7 +379,7 @@ async def create_article(
             "external_article": external_article
         })
 
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/articles", status_code=303)
 
 
 @router.get("/{article_id}/edit", response_class=HTMLResponse)
@@ -331,6 +423,7 @@ async def update_article(
         username: str = Depends(verify_credentials),
         title: str = Form(...),
         text: str = Form(...),
+        slug: Optional[str] = Form(None),
         locale_id: int = Form(...),
         parent_id: Optional[int] = Form(None),
         external_article_id: Optional[int] = Form(None),
@@ -354,40 +447,26 @@ async def update_article(
     geo_ids_list = [int(x) for x in geo_ids.split(",") if x] if geo_ids else []
     tag_ids_list = [int(x) for x in tag_ids.split(",") if x] if tag_ids else []
 
+    # Валидация и создание slug
+    slug_value = slug if slug is not None else article.slug
+    if slug and slug != article.slug:
+        # Проверяем уникальность указанного slug
+        existing = db.query(Article).filter(Article.slug == slug, Article.id != article_id).first()
+        if existing:
+            errors.append("Slug уже используется другой статьей")
+            slug_value = article.slug  # Возвращаем старый slug
+
+    # Обработка изображений
     if image_file and image_file.filename:
         try:
             image_data = await image_file.read()
-            image = Image.open(io.BytesIO(image_data))
-            extension = image_file.filename.split(".")[-1].lower()
-            name = image_file.filename
-            visual_content = VisualContent(
-                data=image_data,
-                name=name,
-                extension=extension,
-                width=image.width,
-                height=image.height,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
-            db.add(visual_content)
-            db.flush()
-            image_id = visual_content.id
-            logger.info(f"New image file uploaded: id={image_id}")
-        except Exception as e:
-            errors.append(f"Failed to process image file: {str(e)}")
-            logger.error(f"Image file processing failed: {str(e)}")
-    elif image_url:
-        try:
-            response = requests.get(image_url, timeout=10)
-            response.raise_for_status()
-            image_data = response.content
-            image = Image.open(io.BytesIO(image_data))
-            extension = image_url.split(".")[-1].lower() if "." in image_url else "jpg"
-            name = image_url.split("/")[-1]
-            existing_visual = db.query(VisualContent).filter(VisualContent.link == image_url).first()
-            if not existing_visual:
+            if len(image_data) > 10 * 1024 * 1024:  # 10MB
+                errors.append("Размер файла не должен превышать 10MB")
+            else:
+                image = Image.open(io.BytesIO(image_data))
+                extension = image_file.filename.split(".")[-1].lower()
+                name = image_file.filename
                 visual_content = VisualContent(
-                    link=image_url,
                     data=image_data,
                     name=name,
                     extension=extension,
@@ -399,16 +478,58 @@ async def update_article(
                 db.add(visual_content)
                 db.flush()
                 image_id = visual_content.id
-                logger.info(f"New image from URL uploaded: id={image_id}")
+                logger.info(f"New image file uploaded: id={image_id}")
+        except Exception as e:
+            errors.append(f"Failed to process image file: {str(e)}")
+            logger.error(f"Image file processing failed: {str(e)}")
+    elif image_url and image_url != (article.image.link if article.image else None):
+        try:
+            # Валидация URL
+            url_pattern = re.compile(
+                r'^https?://'  # http:// or https://
+                r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+                r'localhost|'  # localhost...
+                r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+                r'(?::\d+)?'  # optional port
+                r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+            if not url_pattern.match(image_url):
+                errors.append("Некорректный URL изображения")
             else:
-                image_id = existing_visual.id
-                logger.info(f"Existing image found: id={image_id}")
+                response = requests.get(image_url, timeout=10)
+                response.raise_for_status()
+                image_data = response.content
+                if len(image_data) > 10 * 1024 * 1024:  # 10MB
+                    errors.append("Размер изображения не должен превышать 10MB")
+                else:
+                    image = Image.open(io.BytesIO(image_data))
+                    extension = image_url.split(".")[-1].lower() if "." in image_url else "jpg"
+                    name = image_url.split("/")[-1]
+                    existing_visual = db.query(VisualContent).filter(VisualContent.link == image_url).first()
+                    if not existing_visual:
+                        visual_content = VisualContent(
+                            link=image_url,
+                            data=image_data,
+                            name=name,
+                            extension=extension,
+                            width=image.width,
+                            height=image.height,
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow()
+                        )
+                        db.add(visual_content)
+                        db.flush()
+                        image_id = visual_content.id
+                        logger.info(f"New image from URL uploaded: id={image_id}")
+                    else:
+                        image_id = existing_visual.id
+                        logger.info(f"Existing image found: id={image_id}")
         except Exception as e:
             errors.append(f"Failed to load image from URL: {str(e)}")
             logger.error(f"Image URL loading failed: {str(e)}")
 
     article.title = title
     article.text = text
+    article.slug = slug_value
     article.locale_id = locale_id
     article.parent_id = parent_id
     article.external_article_id = external_article_id
@@ -430,7 +551,7 @@ async def update_article(
 
     try:
         db.commit()
-        logger.info(f"Article updated successfully: id={article_id}")
+        logger.info(f"Article updated successfully: id={article_id}, slug={slug_value}")
     except Exception as e:
         db.rollback()
         errors.append(f"Failed to update article: {str(e)}")
@@ -458,7 +579,7 @@ async def update_article(
             "external_article": article.external_article
         })
 
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/articles", status_code=303)
 
 
 @router.get("/{article_id}/compare", response_class=HTMLResponse)
@@ -481,80 +602,6 @@ async def compare_article(
     })
 
 
-@router.post("/categories", response_class=HTMLResponse)
-async def create_category(
-        request: Request,
-        db: Session = Depends(get_db),
-        username: str = Depends(verify_credentials),
-        code: str = Form(...),
-        description: Optional[str] = Form(None)
-):
-    logger.info(f"Creating category: code={code}")
-    category = Category(code=code, description=description)
-    db.add(category)
-    try:
-        db.commit()
-        logger.info(f"Category created: code={code}")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Category creation failed: {str(e)}")
-        return templates.TemplateResponse("articles/form.html", {
-            "request": request,
-            "errors": [f"Failed to create category: {str(e)}"],
-            "article": None
-        })
-    return RedirectResponse(url="/admin/create", status_code=303)
-
-
-@router.post("/geo", response_class=HTMLResponse)
-async def create_geo(
-        request: Request,
-        db: Session = Depends(get_db),
-        username: str = Depends(verify_credentials),
-        code: str = Form(...),
-        description: Optional[str] = Form(None)
-):
-    logger.info(f"Creating geo: code={code}")
-    geo = Geo(code=code, description=description)
-    db.add(geo)
-    try:
-        db.commit()
-        logger.info(f"Geo created: code={code}")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Geo creation failed: {str(e)}")
-        return templates.TemplateResponse("articles/form.html", {
-            "request": request,
-            "errors": [f"Failed to create geo: {str(e)}"],
-            "article": None
-        })
-    return RedirectResponse(url="/admin/create", status_code=303)
-
-
-@router.post("/tags", response_class=HTMLResponse)
-async def create_tag(
-        request: Request,
-        db: Session = Depends(get_db),
-        username: str = Depends(verify_credentials),
-        code: str = Form(...)
-):
-    logger.info(f"Creating tag: code={code}")
-    tag = Tag(code=code)
-    db.add(tag)
-    try:
-        db.commit()
-        logger.info(f"Tag created: code={code}")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Tag creation failed: {str(e)}")
-        return templates.TemplateResponse("articles/form.html", {
-            "request": request,
-            "errors": [f"Failed to create tag: {str(e)}"],
-            "article": None
-        })
-    return RedirectResponse(url="/admin/create", status_code=303)
-
-
 @router.post("/{article_id}/delete", response_class=HTMLResponse)
 async def delete_article(
         request: Request,
@@ -568,12 +615,12 @@ async def delete_article(
         logger.warning(f"Article not found: id={article_id}")
         raise HTTPException(status_code=404, detail="Article not found")
     try:
-        db.delete(article.delete)
+        db.delete(article)
         db.commit()
         logger.info(f"Article deleted successfully: id={article_id}")
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to delete article: {str(e)}")
-        raise HTTPException(status_code=400, detail="Failed to delete article: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to delete article: {str(e)}")
 
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/articles", status_code=303)

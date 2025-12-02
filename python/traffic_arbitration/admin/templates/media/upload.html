@@ -1,0 +1,465 @@
+{% extends "layouts.html" %}
+{% block breadcrumb %}
+    <li class="breadcrumb-item">
+        <a href="/admin/media/gallery" class="text-decoration-none">Media Gallery</a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page">Upload Files</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-upload"></i> Upload Files</h1>
+    <a href="/admin/media/gallery" class="btn btn-outline-primary">
+        <i class="bi bi-images me-2"></i>Back to Gallery
+    </a>
+</div>
+
+<!-- Upload Statistics -->
+{% if stats %}
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Storage Used</h5>
+                        <h3>{{ stats.storage_used or '0 MB' }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-hdd" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Upload Limit</h5>
+                        <h3>{{ stats.max_file_size or '10 MB' }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-file-earmark" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Allowed Types</h5>
+                        <h3>{{ stats.allowed_types|length if stats.allowed_types else 0 }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-file-check" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row">
+    <!-- Upload Form -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> File Upload</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/admin/media/upload" enctype="multipart/form-data" id="uploadForm">
+                    <div class="mb-4">
+                        <label class="form-label">Select Files</label>
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-placeholder">
+                                <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #6c757d;"></i>
+                                <h5 class="mt-3">Drag & Drop Files Here</h5>
+                                <p class="text-muted">or click to select files</p>
+                                <input type="file" id="fileInput" name="files" multiple
+                                       accept="{{ stats.allowed_types|join(',') if stats and stats.allowed_types else '*' }}" style="display: none;">
+                                <button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                                    <i class="bi bi-folder-open me-2"></i>Browse Files
+                                </button>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">
+                            Maximum file size: {{ stats.max_file_size if stats else '10 MB' }}.
+                            Allowed types: {{ stats.allowed_types|join(', ') if stats and stats.allowed_types else 'All files' }}
+                        </small>
+                    </div>
+
+                    <!-- File List -->
+                    <div id="fileList" class="mb-4" style="display: none;">
+                        <h6>Selected Files:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>File Name</th>
+                                        <th>Size</th>
+                                        <th>Type</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fileListBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Categories and Tags -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">Categories</label>
+                            <select name="category_ids" class="form-select" multiple size="5">
+                                {% for category in categories %}
+                                    <option value="{{ category.id }}">{{ category.code }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">Hold Ctrl/Cmd to select multiple categories</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Tags</label>
+                            <select name="tag_ids" class="form-select" multiple size="5">
+                                {% for tag in tags %}
+                                    <option value="{{ tag.id }}">{{ tag.code }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">Hold Ctrl/Cmd to select multiple tags</small>
+                        </div>
+                    </div>
+
+                    <!-- Upload Progress -->
+                    <div id="uploadProgress" class="mb-4" style="display: none;">
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div class="text-center mt-2">
+                            <span id="progressText">Uploading...</span>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg" id="uploadBtn" disabled>
+                            <i class="bi bi-upload me-2"></i>Upload Files
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Tips -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> Upload Tips</h5>
+            </div>
+            <div class="card-body">
+                <h6>Image Guidelines:</h6>
+                <ul class="list-unstyled">
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle text-success me-2"></i>
+                        Recommended size: 800x600px minimum
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle text-success me-2"></i>
+                        Optimal file size: Under 2MB
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle text-success me-2"></i>
+                        Use descriptive filenames
+                    </li>
+                </ul>
+
+                <h6 class="mt-4">File Organization:</h6>
+                <ul class="list-unstyled">
+                    <li class="mb-2">
+                        <i class="bi bi-tag text-primary me-2"></i>
+                        Assign categories for better organization
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-hash text-primary me-2"></i>
+                        Use tags for search and filtering
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-info-circle text-info me-2"></i>
+                        Files are automatically optimized
+                    </li>
+                </ul>
+
+                <div class="alert alert-info mt-4">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>Note:</strong> Large files may take longer to upload. Please be patient during the process.
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Uploads -->
+        <div class="card mt-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Uploads</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_uploads %}
+                    <div class="list-group list-group-flush">
+                        {% for upload in recent_uploads %}
+                            <div class="list-group-item px-0">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-shrink-0 me-3">
+                                        <i class="bi bi-file-earmark-image text-success" style="font-size: 1.5rem;"></i>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-0">{{ upload.name }}</h6>
+                                        <small class="text-muted">{{ upload.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                                    </div>
+                                    <a href="/admin/media/{{ upload.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted mb-0">No recent uploads found.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.upload-area {
+    border: 2px dashed #dee2e6;
+    border-radius: 0.5rem;
+    padding: 3rem 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    background-color: #f8f9fa;
+}
+
+.upload-area:hover,
+.upload-area.dragover {
+    border-color: #007bff;
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
+.upload-placeholder {
+    pointer-events: none;
+}
+
+.upload-area.dragover .upload-placeholder {
+    pointer-events: none;
+}
+
+.progress {
+    height: 1rem;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.bg-primary {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+}
+
+.bg-success {
+    background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+}
+
+.bg-info {
+    background: linear-gradient(45deg, #17a2b8, #138496) !important;
+}
+
+.card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.btn:disabled {
+    cursor: not-allowed;
+}
+</style>
+
+<script>
+// File upload functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('fileInput');
+    const uploadArea = document.getElementById('uploadArea');
+    const fileList = document.getElementById('fileList');
+    const fileListBody = document.getElementById('fileListBody');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const progressBar = uploadProgress.querySelector('.progress-bar');
+    const progressText = document.getElementById('progressText');
+
+    let selectedFiles = [];
+
+    // File input change
+    fileInput.addEventListener('change', function(e) {
+        handleFiles(e.target.files);
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    // Handle file selection
+    function handleFiles(files) {
+        selectedFiles = Array.from(files);
+        updateFileList();
+        updateUploadButton();
+    }
+
+    // Update file list display
+    function updateFileList() {
+        if (selectedFiles.length === 0) {
+            fileList.style.display = 'none';
+            return;
+        }
+
+        fileList.style.display = 'block';
+        fileListBody.innerHTML = '';
+
+        selectedFiles.forEach((file, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <div class="d-flex align-items-center">
+                        <i class="bi ${getFileIcon(file.type)} me-2 text-muted"></i>
+                        <span>${file.name}</span>
+                    </div>
+                </td>
+                <td><span class="badge bg-secondary">${formatFileSize(file.size)}</span></td>
+                <td><code>${file.type || 'Unknown'}</code></td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFile(${index})">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </td>
+            `;
+            fileListBody.appendChild(row);
+        });
+    }
+
+    // Get file icon based on type
+    function getFileIcon(type) {
+        if (type.startsWith('image/')) return 'bi-file-earmark-image text-success';
+        if (type.startsWith('video/')) return 'bi-file-earmark-play text-info';
+        if (type.startsWith('audio/')) return 'bi-file-earmark-music text-warning';
+        if (type.includes('pdf')) return 'bi-file-earmark-pdf text-danger';
+        if (type.includes('text') || type.includes('document')) return 'bi-file-earmark-text text-primary';
+        return 'bi-file-earmark text-secondary';
+    }
+
+    // Format file size
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Update upload button state
+    function updateUploadButton() {
+        uploadBtn.disabled = selectedFiles.length === 0;
+    }
+
+    // Remove file from selection
+    window.removeFile = function(index) {
+        selectedFiles.splice(index, 1);
+        updateFileList();
+        updateUploadButton();
+    };
+
+    // Form submission
+    uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        if (selectedFiles.length === 0) {
+            alert('Please select at least one file to upload.');
+            return;
+        }
+
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading...';
+        uploadProgress.style.display = 'block';
+
+        const formData = new FormData();
+        selectedFiles.forEach(file => {
+            formData.append('files', file);
+        });
+
+        // Add categories and tags
+        const categorySelect = uploadForm.querySelector('select[name="category_ids"]');
+        const tagSelect = uploadForm.querySelector('select[name="tag_ids"]');
+        
+        Array.from(categorySelect.selectedOptions).forEach(option => {
+            formData.append('category_ids', option.value);
+        });
+        
+        Array.from(tagSelect.selectedOptions).forEach(option => {
+            formData.append('tag_ids', option.value);
+        });
+
+        // Upload with progress
+        fetch(uploadForm.action, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                progressBar.style.width = '100%';
+                progressText.textContent = 'Upload complete!';
+                
+                setTimeout(() => {
+                    window.location.href = '/admin/media/gallery';
+                }, 2000);
+            } else {
+                throw new Error('Upload failed');
+            }
+        }).catch(error => {
+            progressText.textContent = 'Upload failed. Please try again.';
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="bi bi-upload me-2"></i>Upload Files';
+            
+            setTimeout(() => {
+                uploadProgress.style.display = 'none';
+            }, 3000);
+        });
+
+        // Simulate progress for better UX
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 30;
+            if (progress > 90) {
+                clearInterval(progressInterval);
+            }
+            progressBar.style.width = Math.min(progress, 90) + '%';
+        }, 500);
+    });
+});
+</script>
+{% endblock %}

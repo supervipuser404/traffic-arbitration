@@ -1,0 +1,358 @@
+{% extends "layouts.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-translate"></i> Locales</h1>
+    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createLocaleModal">
+        <i class="bi bi-plus-circle"></i> Add Locale
+    </button>
+</div>
+
+<!-- Statistics -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Locales</h5>
+                        <h3>{{ stats.total }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-translate" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Active Locales</h5>
+                        <h3>{{ stats.active }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-check-circle" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Default Locale</h5>
+                        <h3>{{ stats.default_code or 'None' }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-star" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Locales Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th><i class="bi bi-flag"></i> Flag</th>
+                        <th><i class="bi bi-translate"></i> Code</th>
+                        <th><i class="bi bi-chat-text"></i> Name</th>
+                        <th><i class="bi bi-file-earmark-text"></i> Articles</th>
+                        <th><i class="bi bi-calendar"></i> Created</th>
+                        <th><i class="bi bi-star"></i> Default</th>
+                        <th><i class="bi bi-tools"></i> Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for locale in locales %}
+                    <tr>
+                        <td>
+                            <div class="flag-container">
+                                {% set flag_map = {
+                                    'ru': '🇷🇺', 'en': '🇺🇸', 'de': '🇩🇪', 'fr': '🇫🇷', 
+                                    'es': '🇪🇸', 'it': '🇮🇹', 'pt': '🇵🇹', 'zh': '🇨🇳',
+                                    'ja': '🇯🇵', 'ko': '🇰🇷', 'ar': '🇸🇦', 'hi': '🇮🇳'
+                                } %}
+                                <span style="font-size: 1.5rem;">{{ flag_map.get(locale.code, '🌐') }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <code class="locale-code">{{ locale.code }}</code>
+                        </td>
+                        <td>
+                            <strong>{{ locale.name or 'Unnamed' }}</strong>
+                            {% if locale.name %}
+                                <br><small class="text-muted">{{ locale.name[:20] if locale.name|length > 20 else locale.name }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if locale.article_count > 0 else 'secondary' }}">
+                                {{ locale.article_count }}
+                            </span>
+                        </td>
+                        <td>
+                            <small>{{ locale.created_at.strftime('%Y-%m-%d') if locale.created_at else 'N/A' }}</small>
+                        </td>
+                        <td>
+                            {% if locale.id == stats.default_id %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-star-fill"></i> Default
+                                </span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" data-bs-target="#editLocaleModal" 
+                                        data-locale-id="{{ locale.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if locale.id != stats.default_id %}
+                                    <button type="button" class="btn btn-outline-warning" 
+                                            onclick="setDefaultLocale('{{ locale.id }}')"
+                                            {% if locale.article_count == 0 %}disabled{% endif %}>
+                                        <i class="bi bi-star"></i>
+                                    </button>
+                                {% endif %}
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary dropdown-toggle" 
+                                            data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                            <a class="dropdown-item" href="#" 
+                                               onclick="viewLocaleArticles('{{ locale.id }}')">
+                                                <i class="bi bi-file-earmark-text"></i> View Articles
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="#" 
+                                               onclick="exportLocale('{{ locale.id }}')">
+                                                <i class="bi bi-download"></i> Export Articles
+                                            </a>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        {% if locale.article_count == 0 and locale.id != stats.default_id %}
+                                        <li>
+                                            <a class="dropdown-item text-danger" href="#" 
+                                               onclick="deleteLocale('{{ locale.id }}')">
+                                                <i class="bi bi-trash"></i> Delete
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create Locale Modal -->
+<div class="modal fade" id="createLocaleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Add Locale</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('create_locale') }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="code" class="form-label">Locale Code *</label>
+                        <input type="text" class="form-control" id="code" name="code" 
+                               placeholder="e.g., ru, en, de, fr" required 
+                               pattern="[a-z]{2,5}" title="2-5 lowercase letters">
+                        <small class="form-text text-muted">ISO language code (2-5 lowercase letters)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Display Name</label>
+                        <input type="text" class="form-control" id="name" name="name" 
+                               placeholder="e.g., Russian, English, German">
+                        <small class="form-text text-muted">Human-readable name in the default language</small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="set_as_default" name="set_as_default">
+                            <label class="form-check-label" for="set_as_default">
+                                Set as default locale
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">The default locale will be used when none is specified</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Create Locale</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Locale Modal -->
+<div class="modal fade" id="editLocaleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Locale</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editLocaleForm">
+                <div class="modal-body" id="editLocaleContent">
+                    <!-- Content will be loaded here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Update Locale</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.locale-code {
+    background-color: #f8f9fa;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+.flag-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 30px;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.bg-primary {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+}
+
+.bg-success {
+    background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+}
+
+.bg-info {
+    background: linear-gradient(45deg, #17a2b8, #138496) !important;
+}
+
+.bg-warning {
+    background: linear-gradient(45deg, #ffc107, #e0a800) !important;
+}
+
+.card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+</style>
+
+<script>
+// Edit locale modal
+document.getElementById('editLocaleModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const localeId = button.getAttribute('data-locale-id');
+    
+    fetch(`/admin/settings/locales/${localeId}`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#editLocaleContent');
+            const form = modal.querySelector('#editLocaleForm');
+            
+            content.innerHTML = `
+                <div class="mb-3">
+                    <label for="edit_code" class="form-label">Locale Code *</label>
+                    <input type="text" class="form-control" id="edit_code" name="code" 
+                           value="${data.code}" required pattern="[a-z]{2,5}">
+                </div>
+                <div class="mb-3">
+                    <label for="edit_name" class="form-label">Display Name</label>
+                    <input type="text" class="form-control" id="edit_name" name="name" 
+                           value="${data.name || ''}" placeholder="Human-readable name">
+                </div>
+                <input type="hidden" name="locale_id" value="${localeId}">
+            `;
+            
+            form.action = `/admin/settings/locales/${localeId}/edit`;
+        });
+});
+
+// Set default locale
+function setDefaultLocale(localeId) {
+    if (confirm('Are you sure you want to set this locale as default? This will affect all articles without specified locale.')) {
+        fetch(`/admin/settings/locales/${localeId}/set-default`, {
+            method: 'POST'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to set default locale. Please try again.');
+            }
+        });
+    }
+}
+
+// View locale articles
+function viewLocaleArticles(localeId) {
+    alert('View locale articles functionality to be implemented');
+}
+
+// Export locale
+function exportLocale(localeId) {
+    alert('Export locale functionality to be implemented');
+}
+
+// Delete locale
+function deleteLocale(localeId) {
+    if (confirm('Are you sure you want to delete this locale? This action cannot be undone.')) {
+        fetch(`/admin/settings/locales/${localeId}/delete`, {
+            method: 'DELETE'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to delete locale. Please try again.');
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

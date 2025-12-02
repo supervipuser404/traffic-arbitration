@@ -1,0 +1,627 @@
+{% extends "layouts.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-eye"></i> Article Previews</h1>
+    <div class="btn-group">
+        <button type="button" class="btn btn-success" id="fetchSelectedBtn" disabled>
+            <i class="bi bi-download"></i> Fetch Selected
+        </button>
+        <button type="button" class="btn btn-outline-primary" id="refreshBtn">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <button type="button" class="btn btn-outline-info" id="autoFetchBtn">
+            <i class="bi bi-magic"></i> Auto Fetch
+        </button>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Previews</h5>
+                        <h3>{{ stats.total }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-eye-fill" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Unprocessed</h5>
+                        <h3>{{ stats.unprocessed }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-clock" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Processed</h5>
+                        <h3>{{ stats.processed }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-check-circle" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Today</h5>
+                        <h3>{{ stats.today }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-calendar-day" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" id="filterForm">
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label">Source</label>
+                    <select name="source_id" class="form-select">
+                        <option value="">All Sources</option>
+                        {% for source in sources %}
+                            <option value="{{ source.id }}" {% if filters and filters.source_id == source.id %}selected{% endif %}>
+                                {{ source.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All Status</option>
+                        <option value="processed" {% if filters and filters.status == "processed" %}selected{% endif %}>Processed</option>
+                        <option value="unprocessed" {% if filters and filters.status == "unprocessed" %}selected{% endif %}>Unprocessed</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ (filters.date_from if filters else '') or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ (filters.date_to if filters else '') or '' }}">
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <label class="form-label">Search</label>
+                    <input type="text" name="search" class="form-control"
+                           placeholder="Search in title or text..." value="{{ (filters.search if filters else '') or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Sort By</label>
+                    <select name="sort" class="form-select">
+                        <option value="created_at" {% if filters and filters.sort == "created_at" %}selected{% endif %}>Date Created</option>
+                        <option value="title" {% if filters and filters.sort == "title" %}selected{% endif %}>Title</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2">Filter</button>
+                    <a href="/admin/pipeline/previews" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Previews Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover" id="previewsTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th width="50">
+                            <input type="checkbox" id="selectAll" class="form-check-input">
+                        </th>
+                        <th><i class="bi bi-image"></i> Preview</th>
+                        <th><i class="bi bi-list-ul"></i> Title</th>
+                        <th><i class="bi bi-database"></i> Source</th>
+                        <th><i class="bi bi-clock"></i> Created</th>
+                        <th><i class="bi bi-check-circle"></i> Status</th>
+                        <th><i class="bi bi-link-45deg"></i> Link</th>
+                        <th><i class="bi bi-tools"></i> Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for preview in previews %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input preview-checkbox" 
+                                   value="{{ preview.id }}">
+                        </td>
+                        <td>
+                            {% if preview.image_link %}
+                                <img src="{{ preview.image_link }}" alt="Preview image" 
+                                     class="img-thumbnail" style="width: 60px; height: 40px; object-fit: cover;">
+                            {% else %}
+                                <div class="text-center text-muted">
+                                    <i class="bi bi-image" style="font-size: 1.5rem;"></i>
+                                </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div>
+                                <strong>{{ preview.title[:80] }}{% if preview.title|length > 80 %}...{% endif %}</strong>
+                                {% if preview.text %}
+                                    <br>
+                                    <small class="text-muted">
+                                        {{ preview.text[:150] }}{% if preview.text|length > 150 %}...{% endif %}
+                                    </small>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ preview.link.content_source.name }}</span>
+                            {% if preview.link.content_source.domain %}
+                                <br><small class="text-muted">{{ preview.link.content_source.domain }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ preview.created_at.strftime('%Y-%m-%d %H:%M') if preview.created_at else 'N/A' }}</small>
+                            {% if preview.updated_at and preview.updated_at != preview.created_at %}
+                                <br><small class="text-muted">Updated: {{ preview.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if preview.is_processed %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle"></i> Fetched
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-clock"></i> Pending
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if preview.link.link %}
+                                <a href="{{ preview.link.link }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-box-arrow-up-right"></i> Open
+                                </a>
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" data-bs-target="#viewPreviewModal" 
+                                        data-preview-id="{{ preview.id }}">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                {% if not preview.is_processed %}
+                                    <button type="button" class="btn btn-outline-success" 
+                                            data-bs-toggle="modal" data-bs-target="#fetchPreviewModal" 
+                                            data-preview-id="{{ preview.id }}">
+                                        <i class="bi bi-download"></i>
+                                    </button>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline-info" 
+                                            data-bs-toggle="modal" data-bs-target="#showArticleModal" 
+                                            data-preview-id="{{ preview.id }}">
+                                        <i class="bi bi-file-earmark-text"></i>
+                                    </button>
+                                {% endif %}
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary dropdown-toggle" 
+                                            data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                            <a class="dropdown-item" href="#" 
+                                               onclick="fetchPreview('{{ preview.id }}')">
+                                                <i class="bi bi-download"></i> Fetch Now
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="{{ preview.link.link }}" target="_blank">
+                                                <i class="bi bi-box-arrow-up-right"></i> Open Source
+                                            </a>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a class="dropdown-item text-danger" href="#" 
+                                               onclick="deletePreview('{{ preview.id }}')">
+                                                <i class="bi bi-trash"></i> Delete
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total > per_page %}
+<nav aria-label="Page navigation" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if page > 1 %}
+            <li class="page-item">
+                <a class="page-link" href="/admin/pipeline/previews?page=1">
+                    <i class="bi bi-chevron-double-left"></i> First
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="/admin/pipeline/previews?page={{ page-1 }}">
+                    <i class="bi bi-chevron-left"></i> Previous
+                </a>
+            </li>
+        {% endif %}
+        
+        {% for page_num in range(1, (total // per_page) + 2) %}
+            {% if page_num == page %}
+                <li class="page-item active">
+                    <span class="page-link">{{ page_num }}</span>
+                </li>
+            {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="/admin/pipeline/previews?page={{ page_num }}">{{ page_num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if page < (total // per_page) + 1 %}
+            <li class="page-item">
+                <a class="page-link" href="/admin/pipeline/previews?page={{ page+1 }}">
+                    Next <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="/admin/pipeline/previews?page={{ (total // per_page) + 1 }}">
+                    Last <i class="bi bi-chevron-double-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- View Preview Modal -->
+<div class="modal fade" id="viewPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-eye"></i> View Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="previewContent">
+                <!-- Content will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-success" id="fetchFromPreviewBtn">
+                    <i class="bi bi-download"></i> Fetch Article
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fetch Preview Modal -->
+<div class="modal fade" id="fetchPreviewModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-download"></i> Fetch Article</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to fetch the full article from this preview?</p>
+                <p class="text-muted">This will download the article content and create an external article record.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="confirmFetchBtn">Fetch Article</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Show Article Modal -->
+<div class="modal fade" id="showArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-text"></i> Fetched Article</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="articleContent">
+                <!-- Content will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="createFromArticleBtn">
+                    <i class="bi bi-plus-circle"></i> Create Article
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.preview-checkbox {
+    transform: scale(1.2);
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.modal-xl {
+    max-width: 90%;
+}
+
+.card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.img-thumbnail {
+    border: 1px solid #ddd;
+    border-radius: 0.375rem;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
+.bg-primary {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+}
+
+.bg-warning {
+    background: linear-gradient(45deg, #ffc107, #e0a800) !important;
+}
+
+.bg-success {
+    background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+}
+
+.bg-info {
+    background: linear-gradient(45deg, #17a2b8, #138496) !important;
+}
+</style>
+
+<script>
+// Handle select all checkbox
+document.getElementById('selectAll').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.preview-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = this.checked;
+    });
+    updateFetchButton();
+});
+
+// Handle individual checkboxes
+document.querySelectorAll('.preview-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        updateFetchButton();
+    });
+});
+
+function updateFetchButton() {
+    const checkedBoxes = document.querySelectorAll('.preview-checkbox:checked');
+    const fetchBtn = document.getElementById('fetchSelectedBtn');
+    fetchBtn.disabled = checkedBoxes.length === 0;
+    fetchBtn.innerHTML = checkedBoxes.length > 0 
+        ? `<i class="bi bi-download"></i> Fetch Selected (${checkedBoxes.length})`
+        : '<i class="bi bi-download"></i> Fetch Selected';
+}
+
+// Fetch selected previews
+document.getElementById('fetchSelectedBtn').addEventListener('click', function() {
+    const checkedBoxes = document.querySelectorAll('.preview-checkbox:checked');
+    const previewIds = Array.from(checkedBoxes).map(cb => cb.value);
+    
+    if (previewIds.length === 0) return;
+    
+    if (confirm(`Fetch ${previewIds.length} selected previews?`)) {
+        fetch('/admin/pipeline/previews/fetch', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ preview_ids: previewIds })
+        }).then(() => {
+            location.reload();
+        });
+    }
+});
+
+// Auto fetch button
+document.getElementById('autoFetchBtn').addEventListener('click', function() {
+    if (confirm('Start auto-fetching unprocessed previews?')) {
+        fetch('/admin/pipeline/previews/auto-fetch', {
+            method: 'POST'
+        }).then(response => {
+            if (response.ok) {
+                showAlert('Auto-fetch started successfully!', 'success');
+            }
+        });
+    }
+});
+
+// View preview modal
+document.getElementById('viewPreviewModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const previewId = button.getAttribute('data-preview-id');
+    
+    fetch(`/admin/pipeline/previews/${previewId}`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#previewContent');
+            const fetchBtn = modal.querySelector('#fetchFromPreviewBtn');
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-8">
+                        <h4>${data.title}</h4>
+                        <hr>
+                        <div class="content-text">${data.text || 'No text content available'}</div>
+                        <hr>
+                        <p><strong>Source:</strong> ${data.link.content_source.name}</p>
+                        <p><strong>Created:</strong> ${data.created_at}</p>
+                        <p><strong>Status:</strong> ${data.is_processed ? 'Processed' : 'Unprocessed'}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h5>Preview Info</h5>
+                        ${data.image_link ? `<img src="${data.image_link}" class="img-fluid mb-3" alt="Preview image">` : '<p class="text-muted">No image available</p>'}
+                        <ul class="list-unstyled">
+                            <li><strong>ID:</strong> ${data.id}</li>
+                            <li><strong>Source Link:</strong> <a href="${data.link.link}" target="_blank">Open</a></li>
+                            <li><strong>Domain:</strong> ${data.link.content_source.domain}</li>
+                            <li><strong>Handler:</strong> ${data.link.content_source.source_handler}</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+            
+            if (!data.is_processed) {
+                fetchBtn.style.display = 'block';
+                fetchBtn.onclick = function() {
+                    document.getElementById('viewPreviewModal').modal('hide');
+                    fetchPreview(previewId);
+                };
+            } else {
+                fetchBtn.style.display = 'none';
+            }
+        });
+});
+
+// Fetch preview modal
+document.getElementById('fetchPreviewModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const previewId = button.getAttribute('data-preview-id');
+    
+    const confirmBtn = this.querySelector('#confirmFetchBtn');
+    confirmBtn.onclick = function() {
+        fetchPreview(previewId);
+        document.getElementById('fetchPreviewModal').modal('hide');
+    };
+});
+
+// Show article modal
+document.getElementById('showArticleModal').addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const previewId = button.getAttribute('data-preview-id');
+    
+    fetch(`/admin/pipeline/previews/${previewId}/article`)
+        .then(response => response.json())
+        .then(data => {
+            const modal = this;
+            const content = modal.querySelector('#articleContent');
+            const createBtn = modal.querySelector('#createFromArticleBtn');
+            
+            if (data.article) {
+                content.innerHTML = `
+                    <h4>${data.article.title}</h4>
+                    <hr>
+                    <div class="content-text">${data.article.text}</div>
+                    <hr>
+                    <p><strong>Created:</strong> ${data.article.created_at}</p>
+                `;
+                
+                createBtn.style.display = 'block';
+                createBtn.onclick = function() {
+                    // Navigate to article creation
+                    window.location.href = `/admin/articles/create?external_article_id=${data.article.id}`;
+                };
+            } else {
+                content.innerHTML = '<p class="text-muted">No article found for this preview.</p>';
+                createBtn.style.display = 'none';
+            }
+        });
+});
+
+// Utility functions
+function fetchPreview(previewId) {
+    fetch(`/admin/pipeline/previews/${previewId}/fetch`, {
+        method: 'POST'
+    }).then(() => {
+        showAlert('Preview fetched successfully!', 'success');
+        setTimeout(() => location.reload(), 1500);
+    });
+}
+
+function deletePreview(previewId) {
+    if (confirm('Are you sure you want to delete this preview?')) {
+        fetch(`/admin/pipeline/previews/${previewId}/delete`, {
+            method: 'DELETE'
+        }).then(() => {
+            location.reload();
+        });
+    }
+}
+
+function showAlert(message, type = 'info') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.top = '20px';
+    alertDiv.style.right = '20px';
+    alertDiv.style.zIndex = '9999';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+// Refresh button
+document.getElementById('refreshBtn').addEventListener('click', function() {
+    location.reload();
+});
+</script>
+{% endblock %}
