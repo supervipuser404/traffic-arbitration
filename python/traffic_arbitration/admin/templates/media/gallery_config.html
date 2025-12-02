@@ -1,0 +1,223 @@
+{% extends "layouts.html" %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-gear"></i> Gallery Configuration</h1>
+        <a href="/admin/media/gallery" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Gallery
+        </a>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-sliders"></i> Gallery Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/admin/media/config/gallery">
+                        <!-- Thumbnail Settings -->
+                        <div class="mb-4">
+                            <h6 class="text-primary mb-3">Image Display Options</h6>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="useThumbnails" name="use_thumbnails" 
+                                       {% if config.use_thumbnails %}checked{% endif %}>
+                                <label class="form-check-label" for="useThumbnails">
+                                    <strong>Use Thumbnails</strong>
+                                    <br>
+                                    <small class="text-muted">
+                                        Generate optimized thumbnails instead of full-size images. Recommended for slow internet connections.
+                                        <br>Current: <span class="badge bg-{% if config.use_thumbnails %}success{% else %}secondary{% endif %}">
+                                        {% if config.use_thumbnails %}Enabled{% else %}Disabled (Full-size images){% endif %}</span>
+                                    </small>
+                                </label>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="thumbnailWidth" class="form-label">Thumbnail Width</label>
+                                    <input type="number" class="form-control" id="thumbnailWidth" name="thumbnail_width" 
+                                           value="{{ config.thumbnail_width }}" min="50" max="800">
+                                    <div class="form-text">pixels (50-800)</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="thumbnailHeight" class="form-label">Thumbnail Height</label>
+                                    <input type="number" class="form-control" id="thumbnailHeight" name="thumbnail_height" 
+                                           value="{{ config.thumbnail_height }}" min="50" max="600">
+                                    <div class="form-text">pixels (50-600)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Performance Settings -->
+                        <div class="mb-4">
+                            <h6 class="text-primary mb-3">Performance Settings</h6>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="enableLazyLoading" name="enable_lazy_loading" 
+                                       {% if config.enable_lazy_loading %}checked{% endif %}>
+                                <label class="form-check-label" for="enableLazyLoading">
+                                    <strong>Enable Lazy Loading</strong>
+                                    <br>
+                                    <small class="text-muted">
+                                        Load images only when they are about to be visible on screen. Improves initial page load time.
+                                        <br>Current: <span class="badge bg-{% if config.enable_lazy_loading %}success{% else %}warning{% endif %}">
+                                        {% if config.enable_lazy_loading %}Enabled{% else %}Disabled{% endif %}</span>
+                                    </small>
+                                </label>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="cacheTimeout" class="form-label">Filter Cache Timeout</label>
+                                    <input type="number" class="form-control" id="cacheTimeout" name="cache_timeout" 
+                                           value="{{ config.cache_timeout }}" min="60" max="3600">
+                                    <div class="form-text">seconds (1-60 minutes)</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mt-4">
+                                        <small class="text-muted">
+                                            <i class="bi bi-info-circle"></i> 
+                                            Cache time for filters, categories, tags, and statistics
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Current Configuration Summary -->
+                        <div class="mb-4">
+                            <h6 class="text-primary mb-3">Current Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="border rounded p-3 bg-light">
+                                        <div class="d-flex justify-content-between">
+                                            <span>Image Mode:</span>
+                                            <span class="badge bg-{% if config.use_thumbnails %}info{% else %}success{% endif %}">
+                                                {% if config.use_thumbnails %}Thumbnails{% else %}Full-size{% endif %}
+                                            </span>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <span>Image Size:</span>
+                                            <span>{{ config.thumbnail_width }}×{{ config.thumbnail_height }}px</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <span>Lazy Loading:</span>
+                                            <span class="badge bg-{% if config.enable_lazy_loading %}success{% else %}warning{% endif %}">
+                                                {% if config.enable_lazy_loading %}On{% else %}Off{% endif %}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="border rounded p-3 bg-light">
+                                        <div class="d-flex justify-content-between">
+                                            <span>Cache Timeout:</span>
+                                            <span>{{ config.cache_timeout // 60 }}min {{ config.cache_timeout % 60 }}s</span>
+                                        </div>
+                                        <div class="small text-muted mt-2">
+                                            <i class="bi bi-lightbulb"></i>
+                                            Thumbnails recommended for slow connections.<br>
+                                            Full-size for fast local networks.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end">
+                            <a href="/admin/media/gallery" class="btn btn-secondary me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> Save Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Panel -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-question-circle"></i> Help</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6><i class="bi bi-image text-primary"></i> Thumbnails vs Full-size</h6>
+                        <p class="small text-muted mb-0">
+                            <strong>Thumbnails:</strong> Smaller, optimized images (150×100px). 
+                            Better for slow internet connections. Automatic generation on-demand.
+                        </p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <p class="small text-muted mb-0">
+                            <strong>Full-size:</strong> Original image files. Better quality, 
+                            faster loading on local/fast networks. Recommended for development.
+                        </p>
+                    </div>
+
+                    <div class="mb-3">
+                        <h6><i class="bi bi-speedometer2 text-primary"></i> Performance Tips</h6>
+                        <ul class="small text-muted mb-0">
+                            <li>Use thumbnails for remote users</li>
+                            <li>Enable lazy loading for large galleries</li>
+                            <li>Increase cache timeout for stable configurations</li>
+                        </ul>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            Configuration is saved automatically and applies immediately to all users.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Form validation
+document.getElementById('useThumbnails').addEventListener('change', function() {
+    const thumbnailInputs = document.querySelectorAll('#thumbnailWidth, #thumbnailHeight');
+    thumbnailInputs.forEach(input => {
+        input.disabled = !this.checked;
+        input.style.opacity = this.checked ? '1' : '0.5';
+    });
+});
+
+// Initialize state on load
+document.addEventListener('DOMContentLoaded', function() {
+    const useThumbnails = document.getElementById('useThumbnails');
+    const thumbnailInputs = document.querySelectorAll('#thumbnailWidth, #thumbnailHeight');
+    thumbnailInputs.forEach(input => {
+        input.disabled = !useThumbnails.checked;
+        input.style.opacity = useThumbnails.checked ? '1' : '0.5';
+    });
+});
+</script>
+
+<style>
+.form-check-label strong {
+    color: #333;
+}
+
+.border.bg-light {
+    border-color: #dee2e6 !important;
+}
+
+.alert-info {
+    border-color: #b8daff;
+    background-color: #cce7ff;
+    color: #004085;
+}
+
+.badge.bg-info {
+    background-color: #007bff !important;
+}
+</style>
+{% endblock %}

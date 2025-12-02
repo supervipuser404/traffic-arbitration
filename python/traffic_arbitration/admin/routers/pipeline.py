@@ -537,19 +537,46 @@ async def list_previews(
         username: str = Depends(verify_credentials),
         page: int = 1,
         per_page: int = 50,
+        source_id: Optional[int] = None,
+        status: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        search: Optional[str] = None,
+        sort: Optional[str] = "created_at",
         is_processed: Optional[str] = "all"
 ):
     """Список превью статей"""
     logger.info(f"Listing article previews: page={page}")
     
-    query = db.query(ExternalArticlePreview).join(ExternalArticleLink)
+    query = db.query(ExternalArticlePreview).join(ExternalArticleLink).join(ContentSource)
     
     # Фильтрация
+    if source_id:
+        query = query.filter(ExternalArticleLink.source_id == source_id)
+    
+    if status:
+        query = query.filter(ExternalArticlePreview.is_processed == (status == "processed"))
+    
     if is_processed != "all":
         query = query.filter(ExternalArticlePreview.is_processed == (is_processed == "true"))
     
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                ExternalArticlePreview.title.ilike(search_pattern),
+                ExternalArticlePreview.text.ilike(search_pattern)
+            )
+        )
+    
+    # Сортировка
+    if sort == "title":
+        query = query.order_by(ExternalArticlePreview.title)
+    else:
+        query = query.order_by(desc(ExternalArticlePreview.created_at))
+    
     total = query.count()
-    previews = query.order_by(desc(ExternalArticlePreview.created_at)).offset((page - 1) * per_page).limit(per_page).all()
+    previews = query.offset((page - 1) * per_page).limit(per_page).all()
     
     # Рассчитываем статистику
     total_previews = db.query(ExternalArticlePreview).count()
@@ -561,9 +588,12 @@ async def list_previews(
         ExternalArticlePreview.created_at >= today_start
     ).count()
     
+    sources = db.query(ContentSource).all()
+    
     return templates.TemplateResponse("pipeline/previews.html", {
         "request": request,
         "previews": previews,
+        "sources": sources,
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -573,6 +603,14 @@ async def list_previews(
             "unprocessed": unprocessed_previews,
             "processed": processed_previews,
             "today": today_previews
+        },
+        "filters": {
+            "source_id": source_id,
+            "status": status,
+            "date_from": date_from,
+            "date_to": date_to,
+            "search": search,
+            "sort": sort
         }
     })
 
@@ -615,6 +653,12 @@ async def list_external_articles(
         username: str = Depends(verify_credentials),
         page: int = 1,
         per_page: int = 50,
+        source_id: Optional[int] = None,
+        status: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        search: Optional[str] = None,
+        sort: Optional[str] = "created_at",
         is_processed: Optional[str] = "all"
 ):
     """Список внешних статей"""
@@ -623,20 +667,46 @@ async def list_external_articles(
     query = db.query(ExternalArticle).join(ExternalArticleLink).join(ContentSource)
     
     # Фильтрация
+    if source_id:
+        query = query.filter(ExternalArticleLink.source_id == source_id)
+    
+    if status:
+        query = query.filter(ExternalArticle.is_processed == (status == "processed"))
+    
     if is_processed != "all":
         query = query.filter(ExternalArticle.is_processed == (is_processed == "true"))
     
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                ExternalArticle.title.ilike(search_pattern),
+                ExternalArticle.text.ilike(search_pattern)
+            )
+        )
+    
+    # Сортировка
+    if sort == "title":
+        query = query.order_by(ExternalArticle.title)
+    elif sort == "updated_at":
+        query = query.order_by(desc(ExternalArticle.updated_at))
+    else:
+        query = query.order_by(desc(ExternalArticle.created_at))
+    
     total = query.count()
-    external_articles = query.order_by(desc(ExternalArticle.created_at)).offset((page - 1) * per_page).limit(per_page).all()
+    external_articles = query.offset((page - 1) * per_page).limit(per_page).all()
     
     # Рассчитываем статистику
     total_external_articles = db.query(ExternalArticle).count()
     processed_external_articles = db.query(ExternalArticle).filter(ExternalArticle.is_processed == True).count()
     unprocessed_external_articles = db.query(ExternalArticle).filter(ExternalArticle.is_processed == False).count()
     
+    sources = db.query(ContentSource).all()
+    
     return templates.TemplateResponse("pipeline/external_articles.html", {
         "request": request,
         "external_articles": external_articles,
+        "sources": sources,
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -645,6 +715,14 @@ async def list_external_articles(
             "total": total_external_articles,
             "processed": processed_external_articles,
             "unprocessed": unprocessed_external_articles
+        },
+        "filters": {
+            "source_id": source_id,
+            "status": status,
+            "date_from": date_from,
+            "date_to": date_to,
+            "search": search,
+            "sort": sort
         }
     })
 
@@ -656,10 +734,19 @@ async def list_external_articles_alias(
         username: str = Depends(verify_credentials),
         page: int = 1,
         per_page: int = 50,
+        source_id: Optional[int] = None,
+        status: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        search: Optional[str] = None,
+        sort: Optional[str] = "created_at",
         is_processed: Optional[str] = "all"
 ):
     """Алиас для списка внешних статей"""
-    return await list_external_articles(request, db, username, page, per_page, is_processed)
+    return await list_external_articles(
+        request, db, username, page, per_page,
+        source_id, status, date_from, date_to, search, sort, is_processed
+    )
 
 
 @router.get("/external/{external_id}/convert", response_class=HTMLResponse)

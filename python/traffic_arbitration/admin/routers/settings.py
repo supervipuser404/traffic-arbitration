@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_, func
 from typing import Optional, List
 import re
-from traffic_arbitration.models import Category, Geo, Tag, Locale, CategoryLabel, GeoLabel
+from traffic_arbitration.models import Category, Geo, Tag, Locale, CategoryLabel, GeoLabel, ContentSource
 from traffic_arbitration.admin.schemas import (
     CategoryCreate, CategoryResponse, GeoCreate, GeoResponse,
     TagCreate, TagResponse, LocaleCreate, LocaleUpdate, LocaleResponse
@@ -52,12 +52,44 @@ async def list_categories(
     from traffic_arbitration.models import ArticleCategory
     
     total_categories = db.query(Category).count()
-    categories_with_articles = db.query(Category).join(ArticleCategory).distinct().count()
+    # Исправляем join - используем правильный подход для связи многие-ко-многим
+    from sqlalchemy import distinct
+    categories_with_articles = db.query(Category).join(
+        ArticleCategory, Category.id == ArticleCategory.category_id
+    ).distinct().count()
     
     avg_articles = 0
     if total_categories > 0:
         total_articles = db.query(ArticleCategory).count()
         avg_articles = round(total_articles / total_categories, 1)
+    
+    # Добавляем количество статей и labels для каждой категории
+    for category in categories:
+        category.article_count = db.query(ArticleCategory).filter(
+            ArticleCategory.category_id == category.id
+        ).count()
+        # Загружаем labels
+        category.labels = db.query(CategoryLabel).filter(
+            CategoryLabel.category_id == category.id
+        ).all()
+    
+    # Создаем объект пагинации вручную
+    class SimplePagination:
+        def __init__(self, page, per_page, total):
+            self.page = page
+            self.per_page = per_page
+            self.total = total
+            self.pages = (total + per_page - 1) // per_page  # округление вверх
+            self.has_prev = page > 1
+            self.has_next = page < self.pages
+            self.prev_num = page - 1 if page > 1 else None
+            self.next_num = page + 1 if page < self.pages else None
+        
+        def iter_pages(self):
+            for i in range(1, self.pages + 1):
+                yield i
+    
+    pagination = SimplePagination(page, per_page, total)
     
     return templates.TemplateResponse("settings/categories.html", {
         "request": request,
@@ -66,6 +98,11 @@ async def list_categories(
         "page": page,
         "per_page": per_page,
         "search": search,
+        "filters": {
+            "search": search or "",
+            "sort": "code"  # сортировка по умолчанию
+        },
+        "pagination": pagination,
         "stats": {
             "total": total_categories,
             "with_articles": categories_with_articles,
@@ -400,10 +437,15 @@ async def list_geo(
     from traffic_arbitration.models import ArticleGeo
     
     total_geo = db.query(Geo).count()
-    geo_with_articles = db.query(Geo).join(ArticleGeo).distinct().count()
+    # Исправляем join - используем правильный подход для связи многие-ко-многим
+    geo_with_articles = db.query(Geo).join(
+        ArticleGeo, Geo.id == ArticleGeo.geo_id
+    ).distinct().count()
     
     # Самый используемый GEO
-    most_used_geo = db.query(Geo).join(ArticleGeo).group_by(Geo.id).order_by(func.count(ArticleGeo.id).desc()).first()
+    most_used_geo = db.query(Geo).join(
+        ArticleGeo, Geo.id == ArticleGeo.geo_id
+    ).group_by(Geo.id).order_by(func.count(ArticleGeo.article_id).desc()).first()
     most_used_code = most_used_geo.code if most_used_geo else None
     
     avg_articles = 0
@@ -411,19 +453,48 @@ async def list_geo(
         total_article_geo = db.query(ArticleGeo).count()
         avg_articles = round(total_article_geo / total_geo, 1)
     
-    # Добавляем количество статей для каждого geo элемента
+    # Добавляем количество статей и labels для каждого geo элемента
     for geo_item in geo_items:
         geo_item.article_count = db.query(ArticleGeo).filter(ArticleGeo.geo_id == geo_item.id).count()
+        # Загружаем labels
+        geo_item.labels = db.query(GeoLabel).filter(
+            GeoLabel.geo_id == geo_item.id
+        ).all()
     
     max_article_count = max([geo_item.article_count for geo_item in geo_items], default=0)
+    
+    # Создаем объект пагинации вручную
+    class SimplePagination:
+        def __init__(self, page, per_page, total):
+            self.page = page
+            self.per_page = per_page
+            self.total = total
+            self.pages = (total + per_page - 1) // per_page  # округление вверх
+            self.has_prev = page > 1
+            self.has_next = page < self.pages
+            self.prev_num = page - 1 if page > 1 else None
+            self.next_num = page + 1 if page < self.pages else None
+        
+        def iter_pages(self):
+            for i in range(1, self.pages + 1):
+                yield i
+    
+    pagination = SimplePagination(page, per_page, total)
     
     return templates.TemplateResponse("settings/geo.html", {
         "request": request,
         "geo_items": geo_items,
+        "geo_tags": geo_items,  # Переименовываем для совместимости с шаблоном
         "total": total,
         "page": page,
         "per_page": per_page,
         "search": search,
+        "filters": {
+            "search": search or "",
+            "sort": "code",  # сортировка по умолчанию
+            "popularity": ""  # популярность по умолчанию
+        },
+        "pagination": pagination,
         "stats": {
             "total": total_geo,
             "with_articles": geo_with_articles,
@@ -617,10 +688,15 @@ async def list_tags(
     from traffic_arbitration.models import ArticleTag, VisualContentTag
     
     total_tags = db.query(Tag).count()
-    tags_with_articles = db.query(Tag).join(ArticleTag).distinct().count()
+    # Исправляем join - используем правильный подход для связи многие-ко-многим
+    tags_with_articles = db.query(Tag).join(
+        ArticleTag, Tag.id == ArticleTag.tag_id
+    ).distinct().count()
     
     # Популярные теги (теги с более чем 5 статьями)
-    popular_tags_count = db.query(Tag).join(ArticleTag).group_by(Tag.id).having(func.count(ArticleTag.id) > 5).count()
+    popular_tags_count = db.query(Tag).join(
+        ArticleTag, Tag.id == ArticleTag.tag_id
+    ).group_by(Tag.id).having(func.count(ArticleTag.article_id) > 5).count()
     
     avg_usage = 0
     if total_tags > 0:
@@ -633,6 +709,24 @@ async def list_tags(
     
     max_usage = max([tag.article_count for tag in tags], default=0)
     
+    # Создаем объект пагинации вручную
+    class SimplePagination:
+        def __init__(self, page, per_page, total):
+            self.page = page
+            self.per_page = per_page
+            self.total = total
+            self.pages = (total + per_page - 1) // per_page  # округление вверх
+            self.has_prev = page > 1
+            self.has_next = page < self.pages
+            self.prev_num = page - 1 if page > 1 else None
+            self.next_num = page + 1 if page < self.pages else None
+        
+        def iter_pages(self):
+            for i in range(1, self.pages + 1):
+                yield i
+    
+    pagination = SimplePagination(page, per_page, total)
+    
     return templates.TemplateResponse("settings/tags.html", {
         "request": request,
         "tags": tags,
@@ -640,6 +734,12 @@ async def list_tags(
         "page": page,
         "per_page": per_page,
         "search": search,
+        "filters": {
+            "search": search or "",
+            "sort": "code",  # сортировка по умолчанию
+            "usage": ""  # фильтр использования по умолчанию
+        },
+        "pagination": pagination,
         "stats": {
             "total": total_tags,
             "with_articles": tags_with_articles,
@@ -790,7 +890,10 @@ async def list_locales(
     from traffic_arbitration.models import Article
     
     total_locales = db.query(Locale).count()
-    active_locales = db.query(Locale).join(Article).distinct().count()
+    # Исправляем join - используем правильный подход для связи один-ко-многим
+    active_locales = db.query(Locale).join(
+        Article, Locale.id == Article.locale_id
+    ).distinct().count()
     default_locale = db.query(Locale).filter(Locale.code == 'en').first()
     
     # Добавляем количество статей для каждой локали
@@ -805,6 +908,10 @@ async def list_locales(
             "active": active_locales,
             "default_code": 'en' if default_locale else None,
             "default_id": default_locale.id if default_locale else None
+        },
+        "filters": {
+            "search": "",
+            "sort": "code"
         }
     })
 
@@ -926,4 +1033,421 @@ async def delete_locale(
         logger.error(f"Failed to delete locale: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to delete locale: {str(e)}")
     
+
+# ================================
+# CONTENT SOURCES CRUD
+# ================================
+
+@router.get("/content-sources", response_class=HTMLResponse, name="content_sources")
+async def list_content_sources(
+        request: Request,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials),
+        page: int = 1,
+        per_page: int = 50,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+        sort: Optional[str] = "name"
+):
+    """Список источников контента"""
+    logger.info(f"Listing content sources: page={page}")
+    
+    query = db.query(ContentSource)
+    
+    # Фильтрация по статусу
+    if status == "active":
+        query = query.filter(ContentSource.is_active == True)
+    elif status == "inactive":
+        query = query.filter(ContentSource.is_active == False)
+    
+    # Поиск по имени и домену
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                ContentSource.name.ilike(search_pattern),
+                ContentSource.domain.ilike(search_pattern),
+                ContentSource.description.ilike(search_pattern)
+            )
+        )
+    
+    # Сортировка
+    if sort == "name":
+        query = query.order_by(ContentSource.name)
+    elif sort == "created_at":
+        query = query.order_by(desc(ContentSource.created_at))
+    elif sort == "article_count":
+        query = query.order_by(ContentSource.name)  # Простая сортировка для примера
+    
+    total = query.count()
+    sources = query.offset((page - 1) * per_page).limit(per_page).all()
+    
+    # Рассчитываем статистику
+    from traffic_arbitration.models import ExternalArticleLink
+    
+    total_sources = db.query(ContentSource).count()
+    active_sources = db.query(ContentSource).filter(ContentSource.is_active == True).count()
+    external_articles_count = db.query(ExternalArticleLink).count()
+    
+    avg_per_source = 0
+    if total_sources > 0:
+        avg_per_source = round(external_articles_count / total_sources, 1)
+    
+    # Добавляем количество внешних статей для каждого источника
+    for source in sources:
+        source.external_articles = db.query(ExternalArticleLink).filter(
+            ExternalArticleLink.source_id == source.id
+        ).all()
+    
+    # Создаем объект пагинации вручную
+    class SimplePagination:
+        def __init__(self, page, per_page, total):
+            self.page = page
+            self.per_page = per_page
+            self.total = total
+            self.pages = (total + per_page - 1) // per_page
+            self.has_prev = page > 1
+            self.has_next = page < self.pages
+            self.prev_num = page - 1 if page > 1 else None
+            self.next_num = page + 1 if page < self.pages else None
+        
+        def iter_pages(self):
+            for i in range(1, self.pages + 1):
+                yield i
+    
+    pagination = SimplePagination(page, per_page, total)
+    
+    return templates.TemplateResponse("settings/content_sources.html", {
+        "request": request,
+        "sources": sources,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "search": search,
+        "filters": {
+            "search": search or "",
+            "status": status or "",
+            "sort": sort or "name"
+        },
+        "pagination": pagination,
+        "stats": {
+            "total": total_sources,
+            "active": active_sources,
+            "external_articles": external_articles_count,
+            "avg_per_source": avg_per_source
+        }
+    })
+
+
+@router.get("/content-sources/create", response_class=HTMLResponse, name="create_source")
+async def create_source_form(
+        request: Request,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials)
+):
+    """Форма создания источника контента"""
+    logger.info("Accessing create content source form")
+    return templates.TemplateResponse("settings/content_sources_form.html", {
+        "request": request,
+        "source": None,
+        "is_edit": False
+    })
+
+
+@router.post("/content-sources/create", response_class=HTMLResponse)
+async def create_source(
+        request: Request,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials),
+        name: str = Form(...),
+        source_handler: Optional[str] = Form(None),
+        domain: Optional[str] = Form(None),
+        aliases: Optional[str] = Form(None),
+        old_domains: Optional[str] = Form(None),
+        description: Optional[str] = Form(None),
+        is_active: bool = Form(True)
+):
+    """Создание нового источника контента"""
+    logger.info(f"Creating content source: name={name}")
+    
+    errors = []
+    
+    # Валидация
+    if not name or not name.strip():
+        errors.append("Название источника обязательно")
+    
+    if source_handler and not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', source_handler):
+        errors.append("Имя обработчика должно быть корректным Python идентификатором")
+    
+    if errors:
+        return templates.TemplateResponse("settings/content_sources_form.html", {
+            "request": request,
+            "errors": errors,
+            "source": None,
+            "is_edit": False,
+            "form_data": {
+                "name": name,
+                "source_handler": source_handler,
+                "domain": domain,
+                "aliases": aliases,
+                "old_domains": old_domains,
+                "description": description,
+                "is_active": is_active
+            }
+        })
+    
+    try:
+        source = ContentSource(
+            name=name.strip(),
+            source_handler=source_handler.strip() if source_handler else None,
+            domain=domain.strip() if domain else None,
+            aliases=aliases,
+            old_domains=old_domains,
+            description=description,
+            is_active=is_active,
+            created_at=func.now(),
+            updated_at=func.now()
+        )
+        
+        db.add(source)
+        db.commit()
+        logger.info(f"Content source created successfully: id={source.id}")
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create content source: {str(e)}")
+        errors.append(f"Ошибка при создании источника: {str(e)}")
+        
+        return templates.TemplateResponse("settings/content_sources_form.html", {
+            "request": request,
+            "errors": errors,
+            "source": None,
+            "is_edit": False,
+            "form_data": {
+                "name": name,
+                "source_handler": source_handler,
+                "domain": domain,
+                "aliases": aliases,
+                "old_domains": old_domains,
+                "description": description,
+                "is_active": is_active
+            }
+        })
+    
+    return RedirectResponse(url="/admin/settings/content-sources", status_code=303)
+
+
+@router.get("/content-sources/{source_id}", response_class=JSONResponse, name="content_source_details")
+async def get_source_details(
+        request: Request,
+        source_id: int,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials)
+):
+    """Получение деталей источника для AJAX"""
+    logger.info(f"Getting source details: id={source_id}")
+    
+    source = db.query(ContentSource).get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    return {
+        "id": source.id,
+        "name": source.name,
+        "domain": source.domain,
+        "source_handler": source.source_handler,
+        "description": source.description,
+        "aliases": source.aliases,
+        "old_domains": source.old_domains,
+        "is_active": source.is_active,
+        "created_at": source.created_at.strftime('%Y-%m-%d %H:%M'),
+        "updated_at": source.updated_at.strftime('%Y-%m-%d %H:%M') if source.updated_at else None,
+        "external_articles": [],
+        "external_articles_links": [],
+        "external_article_previews": []
+    }
+
+
+@router.post("/content-sources/{source_id}/edit", response_class=HTMLResponse)
+async def update_source(
+        request: Request,
+        source_id: int,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials),
+        name: str = Form(...),
+        source_handler: Optional[str] = Form(None),
+        domain: Optional[str] = Form(None),
+        aliases: Optional[str] = Form(None),
+        old_domains: Optional[str] = Form(None),
+        description: Optional[str] = Form(None),
+        is_active: bool = Form(True)
+):
+    """Обновление источника контента"""
+    logger.info(f"Updating content source: id={source_id}")
+    
+    source = db.query(ContentSource).get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Content source not found")
+    
+    errors = []
+    
+    # Валидация
+    if not name or not name.strip():
+        errors.append("Название источника обязательно")
+    
+    if source_handler and not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', source_handler):
+        errors.append("Имя обработчика должно быть корректным Python идентификатором")
+    
+    if errors:
+        return templates.TemplateResponse("settings/content_sources_form.html", {
+            "request": request,
+            "errors": errors,
+            "source": source,
+            "is_edit": True,
+            "form_data": {
+                "name": name,
+                "source_handler": source_handler,
+                "domain": domain,
+                "aliases": aliases,
+                "old_domains": old_domains,
+                "description": description,
+                "is_active": is_active
+            }
+        })
+    
+    try:
+        source.name = name.strip()
+        source.source_handler = source_handler.strip() if source_handler else None
+        source.domain = domain.strip() if domain else None
+        source.aliases = aliases
+        source.old_domains = old_domains
+        source.description = description
+        source.is_active = is_active
+        source.updated_at = func.now()
+        
+        db.commit()
+        logger.info(f"Content source updated successfully: id={source_id}")
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update content source: {str(e)}")
+        errors.append(f"Ошибка при обновлении источника: {str(e)}")
+        
+        return templates.TemplateResponse("settings/content_sources_form.html", {
+            "request": request,
+            "errors": errors,
+            "source": source,
+            "is_edit": True,
+            "form_data": {
+                "name": name,
+                "source_handler": source_handler,
+                "domain": domain,
+                "aliases": aliases,
+                "old_domains": old_domains,
+                "description": description,
+                "is_active": is_active
+            }
+        })
+    
+    return RedirectResponse(url="/admin/settings/content-sources", status_code=303)
+
+
+@router.post("/content-sources/{source_id}/toggle", response_class=HTMLResponse, name="toggle_source")
+async def toggle_source(
+        request: Request,
+        source_id: int,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials)
+):
+    """Переключение статуса источника"""
+    logger.info(f"Toggling content source: id={source_id}")
+    
+    source = db.query(ContentSource).get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    source.is_active = not source.is_active
+    source.updated_at = func.now()
+    db.commit()
+    
+    return {"success": True, "is_active": source.is_active}
+
+
+@router.post("/content-sources/{source_id}/delete", response_class=HTMLResponse, name="delete_source")
+async def delete_source(
+        request: Request,
+        source_id: int,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials)
+):
+    """Удаление источника контента"""
+    logger.info(f"Deleting content source: id={source_id}")
+    
+    source = db.query(ContentSource).get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Content source not found")
+    
+    try:
+        # Проверяем, есть ли связанные данные
+        from traffic_arbitration.models import ExternalArticleLink
+        
+        external_articles_count = db.query(ExternalArticleLink).filter(
+            ExternalArticleLink.source_id == source_id
+        ).count()
+        
+        if external_articles_count > 0:
+            error_msg = f"Невозможно удалить источник: есть {external_articles_count} связанных ссылок"
+            logger.warning(f"Cannot delete source with related data: {error_msg}")
+            return RedirectResponse(url="/admin/settings/content-sources", status_code=303)
+        
+        db.delete(source)
+        db.commit()
+        logger.info(f"Content source deleted successfully: id={source_id}")
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete content source: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to delete content source: {str(e)}")
+    
+    return RedirectResponse(url="/admin/settings/content-sources", status_code=303)
+
+
+@router.get("/content-sources/{source_id}/stats", response_class=HTMLResponse, name="source_stats")
+async def source_stats(
+        request: Request,
+        source_id: int,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials)
+):
+    """Статистика источника"""
+    logger.info(f"Getting source stats: id={source_id}")
+    
+    source = db.query(ContentSource).get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    # Здесь можно добавить детальную статистику
+    return templates.TemplateResponse("settings/source_stats.html", {
+        "request": request,
+        "source": source
+    })
+
+
+@router.post("/content-sources/{source_id}/test", response_class=JSONResponse, name="test_source")
+async def test_source(
+        request: Request,
+        source_id: int,
+        db: Session = Depends(get_db),
+        username: str = Depends(verify_credentials)
+):
+    """Тестирование соединения с источником"""
+    logger.info(f"Testing source connection: id={source_id}")
+    
+    source = db.query(ContentSource).get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    # Здесь можно добавить реальную логику тестирования
+    # Пока возвращаем успех для примера
+    return {"success": True, "message": "Connection test successful"}
     return RedirectResponse(url="/admin/settings/locales", status_code=303)

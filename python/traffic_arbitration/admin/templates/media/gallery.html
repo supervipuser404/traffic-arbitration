@@ -6,6 +6,9 @@
         <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#uploadModal">
             <i class="bi bi-upload"></i> Upload Files
         </button>
+        <button type="button" class="btn btn-warning" id="updateMetadataBtn">
+            <i class="bi bi-arrow-repeat"></i> Update Metadata
+        </button>
         <button type="button" class="btn btn-outline-primary" id="refreshBtn">
             <i class="bi bi-arrow-clockwise"></i> Refresh
         </button>
@@ -78,19 +81,15 @@
 </div>
 {% endif %}
 
-<!-- Filters -->
+<!-- Simple Search Form -->
 <div class="card mb-4">
     <div class="card-body">
         <form method="GET" id="filterForm">
             <div class="row">
-                <div class="col-md-3">
-                    <label class="form-label">File Type</label>
-                    <select name="file_type" class="form-select">
-                        <option value="">All Types</option>
-                        <option value="image" {% if filters.file_type == "image" %}selected{% endif %}>Images</option>
-                        <option value="video" {% if filters.file_type == "video" %}selected{% endif %}>Videos</option>
-                        <option value="document" {% if filters.file_type == "document" %}selected{% endif %}>Documents</option>
-                    </select>
+                <div class="col-md-4">
+                    <label class="form-label">Search</label>
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="Search by filename..." value="{{ filters.search or '' }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Extension</label>
@@ -101,32 +100,9 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Date From</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ filters.date_from or '' }}">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Date To</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ filters.date_to or '' }}">
-                </div>
-            </div>
-            <div class="row mt-3">
-                <div class="col-md-6">
-                    <label class="form-label">Search</label>
-                    <input type="text" name="search" class="form-control" 
-                           placeholder="Search by filename..." value="{{ filters.search or '' }}">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Sort By</label>
-                    <select name="sort" class="form-select">
-                        <option value="created_at" {% if filters.sort == "created_at" %}selected{% endif %}>Date Created</option>
-                        <option value="name" {% if filters.sort == "name" %}selected{% endif %}>Name</option>
-                        <option value="size" {% if filters.sort == "size" %}selected{% endif %}>Size</option>
-                    </select>
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
+                <div class="col-md-2 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary me-2">Filter</button>
-                    <a href="{{ url_for('gallery') }}" class="btn btn-outline-secondary">Reset</a>
+                    <a href="/admin/media/gallery" class="btn btn-outline-secondary">Reset</a>
                 </div>
             </div>
         </form>
@@ -151,44 +127,80 @@
 
 <!-- Files Grid View -->
 <div id="gridView" class="row">
-    {% for file in files %}
+    {% for file in media_items %}
     <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
         <div class="card h-100 media-card">
             <div class="position-relative">
-                {% if file.extension.lower() in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] %}
-                    <img src="{{ url_for('serve_media', file_id=file.id) }}" 
-                         class="card-img-top media-thumbnail" 
-                         alt="{{ file.name }}"
-                         style="height: 200px; object-fit: cover;">
+                {% if file.extension and file.extension.lower() in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] %}
+                    {% set config = gallery_config if gallery_config is defined else {'use_thumbnails': false, 'enable_lazy_loading': false, 'thumbnail_width': 150, 'thumbnail_height': 100} %}
+                    {% set thumbnail_url = "/admin/media/{}/thumbnail?width={}&height={}".format(
+                        file.id, config.thumbnail_width, config.thumbnail_height
+                    ) if config.use_thumbnails else "/admin/media/{}/view".format(file.id) %}
+                    
+                    {% if config.enable_lazy_loading and config.use_thumbnails %}
+                        <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuOCteODs+ODl+ODq+ODs+ODiTwvdGV4dD48L3N2Zz4="
+                             class="card-img-top media-thumbnail lazy-load"
+                             alt="{{ file.name }}"
+                             style="height: 200px; object-fit: cover;"
+                             data-src="{{ thumbnail_url }}">
+                        <noscript>
+                            <img src="{{ thumbnail_url }}"
+                                 class="card-img-top media-thumbnail"
+                                 alt="{{ file.name }}"
+                                 style="height: 200px; object-fit: cover;">
+                        </noscript>
+                    {% else %}
+                        <img src="{{ thumbnail_url }}"
+                             class="card-img-top media-thumbnail"
+                             alt="{{ file.name }}"
+                             style="height: 200px; object-fit: cover;">
+                    {% endif %}
                 {% else %}
-                    <div class="d-flex align-items-center justify-content-center bg-light" 
+                    <div class="d-flex align-items-center justify-content-center bg-light"
                          style="height: 200px;">
                         <div class="text-center">
                             <i class="bi bi-file-earmark" style="font-size: 3rem; color: #6c757d;"></i>
-                            <p class="mt-2 mb-0 text-muted">{{ file.extension|upper }}</p>
+                            <p class="mt-2 mb-0 text-muted">{{ file.extension|upper if file.extension else 'FILE' }}</p>
                         </div>
                     </div>
+                {% endif %}
+                
+                <!-- Processing Status Badge -->
+                {% set has_metadata = file.extension and file.width and file.height %}
+                {% if not has_metadata %}
+                <div class="position-absolute top-0 start-0 m-2">
+                    <span class="badge bg-warning text-dark">
+                        <i class="bi bi-exclamation-triangle"></i> No metadata
+                    </span>
+                </div>
+                {% endif %}
+                
+                <!-- File Type Badge -->
+                {% if file.extension %}
+                <div class="position-absolute top-0 end-0 m-2">
+                    <span class="badge bg-info text-white">{{ file.extension|upper }}</span>
+                </div>
                 {% endif %}
                 
                 <!-- File Actions Overlay -->
                 <div class="media-overlay">
                     <div class="btn-group-vertical">
-                        <button type="button" class="btn btn-light btn-sm" 
-                                data-bs-toggle="modal" data-bs-target="#viewFileModal" 
-                                data-file-id="{{ file.id }}">
+                        <button type="button" class="btn btn-light btn-sm"
+                                data-bs-toggle="modal" data-bs-target="#viewFileModal"
+                                data-file-id="{{ file.id }}" title="View">
                             <i class="bi bi-eye"></i>
                         </button>
-                        <button type="button" class="btn btn-light btn-sm" 
-                                onclick="downloadFile('{{ file.id }}')">
+                        <button type="button" class="btn btn-light btn-sm"
+                                onclick="downloadFile('{{ file.id }}')" title="Download">
                             <i class="bi bi-download"></i>
                         </button>
-                        <button type="button" class="btn btn-light btn-sm" 
-                                data-bs-toggle="modal" data-bs-target="#editFileModal" 
-                                data-file-id="{{ file.id }}">
+                        <button type="button" class="btn btn-light btn-sm"
+                                data-bs-toggle="modal" data-bs-target="#editFileModal"
+                                data-file-id="{{ file.id }}" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </button>
-                        <button type="button" class="btn btn-danger btn-sm" 
-                                onclick="deleteFile('{{ file.id }}')">
+                        <button type="button" class="btn btn-danger btn-sm"
+                                onclick="deleteFile('{{ file.id }}')" title="Delete">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -196,26 +208,34 @@
             </div>
             
             <div class="card-body">
-                <h6 class="card-title" title="{{ file.name }}">{{ file.name[:30] }}{% if file.name|length > 30 %}...{% endif %}</h6>
+                <h6 class="card-title" title="{{ file.name }}">{{ file.name[:30] if file.name else 'Unnamed File' }}{% if file.name and file.name|length > 30 %}...{% endif %}</h6>
                 <p class="card-text">
                     <small class="text-muted">
-                        <i class="bi bi-hdd"></i> {{ file.size }} bytes<br>
-                        <i class="bi bi-aspect-ratio"></i> {{ file.width }}×{{ file.height }}<br>
-                        <i class="bi bi-calendar"></i> {{ file.created_at.strftime('%Y-%m-%d') }}
+                        <div class="row g-1">
+                            <div class="col-6">
+                                <i class="bi bi-hdd"></i> {{ file.data|length if file.data else 0 }} bytes
+                            </div>
+                            <div class="col-6">
+                                <i class="bi bi-aspect-ratio"></i> {{ file.width if file.width else '?' }}×{{ file.height if file.height else '?' }}
+                            </div>
+                            <div class="col-6">
+                                <i class="bi bi-calendar"></i> {{ file.created_at.strftime('%m-%d') if file.created_at else '??' }}
+                            </div>
+                            <div class="col-6">
+                                {% set has_metadata = file.extension and file.width and file.height %}
+                                {% if has_metadata %}
+                                    <span class="badge bg-success p-0 border-0" style="font-size: 0.6rem;">
+                                        <i class="bi bi-check-circle"></i> Ready
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-warning p-0 border-0" style="font-size: 0.6rem;">
+                                        <i class="bi bi-exclamation-triangle"></i> Missing
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
                     </small>
                 </p>
-                
-                <!-- Categories and Tags -->
-                {% if file.categories or file.tags %}
-                <div class="mb-2">
-                    {% for category in file.categories %}
-                        <span class="badge bg-primary">{{ category.code }}</span>
-                    {% endfor %}
-                    {% for tag in file.tags %}
-                        <span class="badge bg-secondary">{{ tag.code }}</span>
-                    {% endfor %}
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -235,17 +255,21 @@
                             <th><i class="bi bi-hdd"></i> Size</th>
                             <th><i class="bi bi-aspect-ratio"></i> Dimensions</th>
                             <th><i class="bi bi-calendar"></i> Created</th>
-                            <th><i class="bi bi-tags"></i> Tags</th>
                             <th><i class="bi bi-tools"></i> Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for file in files %}
+                        {% for file in media_items %}
                         <tr>
                             <td>
-                                {% if file.extension.lower() in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] %}
-                                    <img src="{{ url_for('serve_media', file_id=file.id) }}" 
-                                         class="img-thumbnail" 
+                                {% if file.extension and file.extension.lower() in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] %}
+                                    {% set config = gallery_config if gallery_config is defined else {'use_thumbnails': false} %}
+                                    {% set thumbnail_url = "/admin/media/{}/thumbnail?width={}&height={}".format(
+                                        file.id, 80, 60
+                                    ) if config.use_thumbnails else "/admin/media/{}/view".format(file.id) %}
+                                    
+                                    <img src="{{ thumbnail_url }}"
+                                         class="img-thumbnail"
                                          alt="{{ file.name }}"
                                          style="width: 60px; height: 40px; object-fit: cover;">
                                 {% else %}
@@ -253,24 +277,12 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <strong>{{ file.name }}</strong>
-                                <br><small class="text-muted">{{ file.extension|upper }}</small>
+                                <strong>{{ file.name if file.name else 'Unnamed File' }}</strong>
+                                <br><small class="text-muted">{{ file.extension|upper if file.extension else 'FILE' }}</small>
                             </td>
-                            <td>{{ file.size }} bytes</td>
-                            <td>{{ file.width }}×{{ file.height }}</td>
-                            <td>{{ file.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                            <td>
-                                {% if file.categories or file.tags %}
-                                    {% for category in file.categories %}
-                                        <span class="badge bg-primary">{{ category.code }}</span>
-                                    {% endfor %}
-                                    {% for tag in file.tags %}
-                                        <span class="badge bg-secondary">{{ tag.code }}</span>
-                                    {% endfor %}
-                                {% else %}
-                                    <span class="text-muted">No tags</span>
-                                {% endif %}
-                            </td>
+                            <td>{{ file.data|length if file.data else 0 }} bytes</td>
+                            <td>{{ file.width if file.width else '?' }}×{{ file.height if file.height else '?' }}</td>
+                            <td>{{ file.created_at.strftime('%Y-%m-%d %H:%M') if file.created_at else 'Unknown' }}</td>
                             <td>
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-primary" 
@@ -302,53 +314,73 @@
     </div>
 </div>
 
-<!-- Pagination -->
-{% if pagination.pages > 1 %}
+<!-- Simple Pagination -->
+{% if total > per_page %}
 <nav aria-label="Page navigation" class="mt-4">
     <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
+        {% if page > 1 %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('gallery', page=1, **request.args) }}">
+                <a class="page-link" href="/admin/media/gallery?page=1">
                     <i class="bi bi-chevron-double-left"></i> First
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('gallery', page=pagination.prev_num, **request.args) }}">
+                <a class="page-link" href="/admin/media/gallery?page={{ page-1 }}">
                     <i class="bi bi-chevron-left"></i> Previous
                 </a>
             </li>
         {% endif %}
         
-        {% for page_num in pagination.iter_pages() %}
-            {% if page_num %}
-                {% if page_num != pagination.page %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('gallery', page=page_num, **request.args) }}">{{ page_num }}</a>
-                    </li>
-                {% else %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ page_num }}</span>
-                    </li>
-                {% endif %}
-            {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link">...</span>
-                </li>
-            {% endif %}
-        {% endfor %}
+        {% set total_pages = (total / per_page)|round(0, 'ceil')|int %}
+        {% set start_page = [1, page-2]|max %}
+        {% set end_page = [total_pages, page+2]|min %}
         
-        {% if pagination.has_next %}
-            <li class="page-item">
-                <a class="page-link" href="{{ url_for('gallery', page=pagination.next_num, **request.args) }}">
-                    Next <i class="bi bi-chevron-right"></i>
-                </a>
-            </li>
-            <li class="page-item">
-                <a class="page-link" href="{{ url_for('gallery', page=pagination.pages, **request.args) }}">
-                    Last <i class="bi bi-chevron-double-right"></i>
-                </a>
-            </li>
-        {% endif %}
+        {% if start_page > 1 %}
+    <li class="page-item">
+        <a class="page-link" href="/admin/media/gallery?page=1">1</a>
+    </li>
+    {% if start_page > 2 %}
+        <li class="page-item disabled">
+            <span class="page-link">...</span>
+        </li>
+    {% endif %}
+{% endif %}
+
+{% for page_num in range(start_page, end_page + 1) %}
+    {% if page_num == page %}
+        <li class="page-item active">
+            <span class="page-link">{{ page_num }}</span>
+        </li>
+    {% else %}
+        <li class="page-item">
+            <a class="page-link" href="/admin/media/gallery?page={{ page_num }}">{{ page_num }}</a>
+        </li>
+    {% endif %}
+{% endfor %}
+
+{% if end_page < total_pages %}
+    {% if end_page < total_pages - 1 %}
+        <li class="page-item disabled">
+            <span class="page-link">...</span>
+        </li>
+    {% endif %}
+    <li class="page-item">
+        <a class="page-link" href="/admin/media/gallery?page={{ total_pages }}">{{ total_pages }}</a>
+    </li>
+{% endif %}
+
+{% if page < total_pages %}
+    <li class="page-item">
+        <a class="page-link" href="/admin/media/gallery?page={{ page+1 }}">
+            Next <i class="bi bi-chevron-right"></i>
+        </a>
+    </li>
+    <li class="page-item">
+        <a class="page-link" href="/admin/media/gallery?page={{ total_pages }}">
+            Last <i class="bi bi-chevron-double-right"></i>
+        </a>
+    </li>
+{% endif %}
     </ul>
 </nav>
 {% endif %}
@@ -542,6 +574,64 @@ document.getElementById('showThumbnails').addEventListener('change', function() 
     });
 });
 
+// Lazy Loading for images
+function initLazyLoading() {
+    const images = document.querySelectorAll('.lazy-load');
+    
+    if ('IntersectionObserver' in window) {
+        const imageObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    const dataSrc = img.getAttribute('data-src');
+                    
+                    if (dataSrc) {
+                        img.src = dataSrc;
+                        img.removeAttribute('data-src');
+                        img.classList.remove('lazy-load');
+                    }
+                    
+                    observer.unobserve(img);
+                }
+            });
+        });
+        
+        images.forEach(img => {
+            // Устанавливаем placeholder изображение
+            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuOCteODs+ODl+ODq+ODs+ODiTwvdGV4dD48L3N2Zz4=';
+            
+            imageObserver.observe(img);
+        });
+    } else {
+        // Fallback для старых браузеров
+        images.forEach(img => {
+            const dataSrc = img.getAttribute('data-src');
+            if (dataSrc) {
+                img.src = dataSrc;
+                img.removeAttribute('data-src');
+            }
+        });
+    }
+}
+
+// Loading indicator
+function showLoadingIndicator() {
+    const loadingHtml = `
+        <div class="text-center my-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Загрузка галереи...</p>
+        </div>
+    `;
+    return loadingHtml;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initLazyLoading();
+});
+
 // Upload form
 document.getElementById('uploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
@@ -553,12 +643,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     
     fetch('/admin/media/upload', {
         method: 'POST',
-        body: formData,
-        onUploadProgress: function(progressEvent) {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            progressBar.style.width = percentCompleted + '%';
-            progressBar.textContent = percentCompleted + '%';
-        }
+        body: formData
     }).then(response => {
         if (response.ok) {
             location.reload();
@@ -583,7 +668,7 @@ document.getElementById('viewFileModal').addEventListener('show.bs.modal', funct
                 <div class="row">
                     <div class="col-md-8">
                         ${data.extension.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|svg)$/) 
-                            ? `<img src="/admin/media/${fileId}" class="img-fluid" alt="${data.name}">`
+                            ? `<img src="/admin/media/${fileId}/view" class="img-fluid" alt="${data.name}">`
                             : `<div class="text-center p-5">
                                 <i class="bi bi-file-earmark" style="font-size: 5rem; color: #6c757d;"></i>
                                 <h5 class="mt-3">${data.extension.toUpperCase()} File</h5>
@@ -598,20 +683,14 @@ document.getElementById('viewFileModal').addEventListener('show.bs.modal', funct
                             <li><strong>Type:</strong> ${data.extension.toUpperCase()}</li>
                             <li><strong>Dimensions:</strong> ${data.width}×${data.height}</li>
                             <li><strong>Created:</strong> ${data.created_at}</li>
-                            <li><strong>URL:</strong> <code>/admin/media/${fileId}</code></li>
+                            <li><strong>URL:</strong> <code>/admin/media/${fileId}/view</code></li>
                         </ul>
-                        
-                        <h6>Categories & Tags</h6>
-                        <div>
-                            ${data.categories.map(cat => `<span class="badge bg-primary me-1">${cat.code}</span>`).join('')}
-                            ${data.tags.map(tag => `<span class="badge bg-secondary me-1">${tag.code}</span>`).join('')}
-                        </div>
                     </div>
                 </div>
             `;
             
             copyBtn.onclick = function() {
-                navigator.clipboard.writeText(window.location.origin + `/admin/media/${fileId}`);
+                navigator.clipboard.writeText(window.location.origin + `/admin/media/${fileId}/view`);
                 this.innerHTML = '<i class="bi bi-check"></i> Copied!';
                 setTimeout(() => {
                     this.innerHTML = '<i class="bi bi-clipboard"></i> Copy URL';
@@ -641,22 +720,6 @@ document.getElementById('editFileModal').addEventListener('show.bs.modal', funct
                     <label class="form-label">File Name</label>
                     <input type="text" name="name" class="form-control" value="${data.name}" required>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Categories</label>
-                    <select name="category_ids" class="form-select" multiple>
-                        ${data.available_categories.map(cat => 
-                            `<option value="${cat.id}" ${data.categories.some(c => c.id === cat.id) ? 'selected' : ''}>${cat.code}</option>`
-                        ).join('')}
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Tags</label>
-                    <select name="tag_ids" class="form-select" multiple>
-                        ${data.available_tags.map(tag => 
-                            `<option value="${tag.id}" ${data.tags.some(t => t.id === tag.id) ? 'selected' : ''}>${tag.code}</option>`
-                        ).join('')}
-                    </select>
-                </div>
                 <input type="hidden" name="file_id" value="${fileId}">
             `;
             
@@ -682,6 +745,51 @@ function deleteFile(fileId) {
 // Refresh button
 document.getElementById('refreshBtn').addEventListener('click', function() {
     location.reload();
+});
+
+// Update metadata button
+document.getElementById('updateMetadataBtn').addEventListener('click', function() {
+    const btn = this;
+    const originalText = btn.innerHTML;
+    
+    // Показываем подтверждение
+    if (!confirm('Обновить метаданные всех медиафайлов? Это может занять несколько минут.')) {
+        return;
+    }
+    
+    // Показываем загрузку
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat animate-spin"></i> Updating...';
+    
+    // Делаем запрос на обновление метаданных
+    fetch('/admin/media/update-metadata', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        
+        if (data.success) {
+            alert(`Успешно обновлено ${data.updated_count} файлов из ${data.total_files_processed} обработанных.`);
+            location.reload();
+        } else {
+            alert(`Ошибка при обновлении метаданных. Обработано файлов: ${data.total_files_processed}`);
+        }
+        
+        if (data.errors && data.errors.length > 0) {
+            console.log('Errors during metadata update:', data.errors);
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        alert('Ошибка при обновлении метаданных: ' + error.message);
+        console.error('Error updating metadata:', error);
+    });
 });
 </script>
 {% endblock %}

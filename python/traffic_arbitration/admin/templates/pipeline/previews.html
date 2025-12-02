@@ -89,7 +89,7 @@
                     <select name="source_id" class="form-select">
                         <option value="">All Sources</option>
                         {% for source in sources %}
-                            <option value="{{ source.id }}" {% if filters.source_id == source.id %}selected{% endif %}>
+                            <option value="{{ source.id }}" {% if filters and filters.source_id == source.id %}selected{% endif %}>
                                 {{ source.name }}
                             </option>
                         {% endfor %}
@@ -99,35 +99,35 @@
                     <label class="form-label">Status</label>
                     <select name="status" class="form-select">
                         <option value="">All Status</option>
-                        <option value="processed" {% if filters.status == "processed" %}selected{% endif %}>Processed</option>
-                        <option value="unprocessed" {% if filters.status == "unprocessed" %}selected{% endif %}>Unprocessed</option>
+                        <option value="processed" {% if filters and filters.status == "processed" %}selected{% endif %}>Processed</option>
+                        <option value="unprocessed" {% if filters and filters.status == "unprocessed" %}selected{% endif %}>Unprocessed</option>
                     </select>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Date From</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ filters.date_from or '' }}">
+                    <input type="date" name="date_from" class="form-control" value="{{ (filters.date_from if filters else '') or '' }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Date To</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ filters.date_to or '' }}">
+                    <input type="date" name="date_to" class="form-control" value="{{ (filters.date_to if filters else '') or '' }}">
                 </div>
             </div>
             <div class="row mt-3">
                 <div class="col-md-6">
                     <label class="form-label">Search</label>
-                    <input type="text" name="search" class="form-control" 
-                           placeholder="Search in title or text..." value="{{ filters.search or '' }}">
+                    <input type="text" name="search" class="form-control"
+                           placeholder="Search in title or text..." value="{{ (filters.search if filters else '') or '' }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Sort By</label>
                     <select name="sort" class="form-select">
-                        <option value="created_at" {% if filters.sort == "created_at" %}selected{% endif %}>Date Created</option>
-                        <option value="title" {% if filters.sort == "title" %}selected{% endif %}>Title</option>
+                        <option value="created_at" {% if filters and filters.sort == "created_at" %}selected{% endif %}>Date Created</option>
+                        <option value="title" {% if filters and filters.sort == "title" %}selected{% endif %}>Title</option>
                     </select>
                 </div>
                 <div class="col-md-3 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary me-2">Filter</button>
-                    <a href="{{ url_for('previews') }}" class="btn btn-outline-secondary">Reset</a>
+                    <a href="/admin/pipeline/previews" class="btn btn-outline-secondary">Reset</a>
                 </div>
             </div>
         </form>
@@ -270,48 +270,42 @@
 </div>
 
 <!-- Pagination -->
-{% if pagination.pages > 1 %}
+{% if total > per_page %}
 <nav aria-label="Page navigation" class="mt-4">
     <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
+        {% if page > 1 %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('previews', page=1, **request.args) }}">
+                <a class="page-link" href="/admin/pipeline/previews?page=1">
                     <i class="bi bi-chevron-double-left"></i> First
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('previews', page=pagination.prev_num, **request.args) }}">
+                <a class="page-link" href="/admin/pipeline/previews?page={{ page-1 }}">
                     <i class="bi bi-chevron-left"></i> Previous
                 </a>
             </li>
         {% endif %}
         
-        {% for page_num in pagination.iter_pages() %}
-            {% if page_num %}
-                {% if page_num != pagination.page %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('previews', page=page_num, **request.args) }}">{{ page_num }}</a>
-                    </li>
-                {% else %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ page_num }}</span>
-                    </li>
-                {% endif %}
+        {% for page_num in range(1, (total // per_page) + 2) %}
+            {% if page_num == page %}
+                <li class="page-item active">
+                    <span class="page-link">{{ page_num }}</span>
+                </li>
             {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link">...</span>
+                <li class="page-item">
+                    <a class="page-link" href="/admin/pipeline/previews?page={{ page_num }}">{{ page_num }}</a>
                 </li>
             {% endif %}
         {% endfor %}
         
-        {% if pagination.has_next %}
+        {% if page < (total // per_page) + 1 %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('previews', page=pagination.next_num, **request.args) }}">
+                <a class="page-link" href="/admin/pipeline/previews?page={{ page+1 }}">
                     Next <i class="bi bi-chevron-right"></i>
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('previews', page=pagination.pages, **request.args) }}">
+                <a class="page-link" href="/admin/pipeline/previews?page={{ (total // per_page) + 1 }}">
                     Last <i class="bi bi-chevron-double-right"></i>
                 </a>
             </li>

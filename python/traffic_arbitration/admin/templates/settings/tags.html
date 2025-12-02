@@ -104,7 +104,7 @@
             </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary me-2">Filter</button>
-                <a href="{{ url_for('tags') }}" class="btn btn-outline-secondary">Reset</a>
+                <a href="/admin/settings/tags" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
     </div>
@@ -210,12 +210,12 @@
     <ul class="pagination justify-content-center">
         {% if pagination.has_prev %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('tags', page=1, **request.args) }}">
+                <a class="page-link" href="/admin/settings/tags?page=1{% if request.query_params %}&{{ request.query_params|urlencode }}{% endif %}">
                     <i class="bi bi-chevron-double-left"></i> First
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('tags', page=pagination.prev_num, **request.args) }}">
+                <a class="page-link" href="/admin/settings/tags?page={{ pagination.prev_num }}{% if request.query_params %}&{{ request.query_params|urlencode }}{% endif %}">
                     <i class="bi bi-chevron-left"></i> Previous
                 </a>
             </li>
@@ -225,7 +225,7 @@
             {% if page_num %}
                 {% if page_num != pagination.page %}
                     <li class="page-item">
-                        <a class="page-link" href="{{ url_for('tags', page=page_num, **request.args) }}">{{ page_num }}</a>
+                        <a class="page-link" href="/admin/settings/tags?page={{ page_num }}{% if request.query_params %}&{{ request.query_params|urlencode }}{% endif %}">{{ page_num }}</a>
                     </li>
                 {% else %}
                     <li class="page-item active">
@@ -241,12 +241,12 @@
         
         {% if pagination.has_next %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('tags', page=pagination.next_num, **request.args) }}">
+                <a class="page-link" href="/admin/settings/tags?page={{ pagination.next_num }}{% if request.query_params %}&{{ request.query_params|urlencode }}{% endif %}">
                     Next <i class="bi bi-chevron-right"></i>
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('tags', page=pagination.pages, **request.args) }}">
+                <a class="page-link" href="/admin/settings/tags?page={{ pagination.pages }}{% if request.query_params %}&{{ request.query_params|urlencode }}{% endif %}">
                     Last <i class="bi bi-chevron-double-right"></i>
                 </a>
             </li>
@@ -263,7 +263,7 @@
                 <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Add Tag</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="{{ url_for('create_tag') }}">
+            <form method="POST" action="/admin/settings/tags/create">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="code" class="form-label">Tag Code *</label>
@@ -323,7 +323,7 @@
                 <h5 class="modal-title"><i class="bi bi-upload"></i> Bulk Import Tags</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="{{ url_for('bulk_import_tags') }}">
+            <form method="POST" action="/admin/settings/tags/bulk-import">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Import Method</label>

@@ -236,10 +236,11 @@ async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     """
     # Вся логика инкапсулирована в TeaserService.
     # Передаем *весь* объект запроса в сервис.
+    print(f"{request_data=}")
     response_data = teaser_service.get_teasers_for_widgets(
         request_data=request_data
     )
-
+    print(f"{response_data=}")
     # Сервис уже возвращает словарь,
     # соответствующий TeaserResponseSchema ({"widgets": ..., "newly_served_ids": ...})
     return response_data

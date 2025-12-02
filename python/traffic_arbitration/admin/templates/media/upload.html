@@ -73,7 +73,7 @@
                 <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> File Upload</h5>
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('upload_files') }}" enctype="multipart/form-data" id="uploadForm">
+                <form method="POST" action="/admin/media/upload" enctype="multipart/form-data" id="uploadForm">
                     <div class="mb-4">
                         <label class="form-label">Select Files</label>
                         <div class="upload-area" id="uploadArea">
