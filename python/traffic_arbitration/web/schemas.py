@@ -1,4 +1,4 @@
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, IPvAnyAddress, HttpUrl
 from datetime import datetime
 from typing import Optional, List, Dict
 
@@ -105,11 +105,10 @@ class TeaserRequestSchema(BaseModel):
     """
     Схема для валидации входящего запроса на /etc.
     """
-    # TODO: ip -> pydantic.IPvAnyAddress; url -> pydantic.HttpUrl
     uid: str
-    ip: str
+    ip: IPvAnyAddress
     ua: str
-    url: str
+    url: HttpUrl
     loc: str = "ru"
     w: int
     h: int
