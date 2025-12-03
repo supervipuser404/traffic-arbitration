@@ -71,7 +71,7 @@ async function _fetchTeasers(widgetsMap, signal) {
         headers: { 'Content-Type': 'application/json' },
         signal: signal,
         body: JSON.stringify({
-            uid: uid, ip: '', ua: navigator.userAgent, url: window.location.href,
+            uid: uid, ua: navigator.userAgent, url: window.location.href,
             w: window.innerWidth, h: window.innerHeight,
             widgets: widgetsMap,
             seen_ids_page: pageSeen, seen_ids_long_term: longTerm,

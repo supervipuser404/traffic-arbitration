@@ -1,15 +1,19 @@
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, Depends, Body
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, Session, selectinload
 from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
+import asyncio
 from traffic_arbitration.common.config import config
 from traffic_arbitration.db.queries import get_article_by_slug
+from traffic_arbitration.models import Article, Category
 from .utils import inject_in_article_teasers
 from .cache import news_cache
 from .services import NewsRanker, TeaserService
@@ -43,8 +47,17 @@ class AppState:
 
 
 app_state = AppState()
-
-
+ 
+ 
+def force_update_bg():
+    """Фоновое обновление кэша с обработкой ошибок."""
+    try:
+        news_cache.force_update()
+        print("INFO:     Кэш успешно обновлен.")
+    except Exception as e:
+        print(f"ERROR:    Не удалось выполнить первое обновление кэша: {e}")
+ 
+ 
 # --- Lifespan Manager ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -92,16 +105,16 @@ async def lifespan(app: FastAPI):
     # 3. Внедряем session_maker в кэш и запускаем *первое* обновление
     print("INFO:     Внедрение сессии в кэш...")
     news_cache.set_session_maker(app_state.SessionLocal)
-
-    print("INFO:     Запуск *первого* (синхронного) обновления кэша...")
-    try:
-        news_cache.force_update()
-        print("INFO:     Кэш успешно обновлен.")
-    except Exception as e:
-        print(f"ERROR:    Не удалось выполнить первое обновление кэша: {e}")
-        # В зависимости от логики, здесь можно либо упасть,
-        # либо продолжить с пустым кэшем.
-
+    
+    print("INFO:     Инициализация сервисов...")
+    app.state.news_ranker = NewsRanker(cache=news_cache)
+    app.state.teaser_service = TeaserService(news_ranker=app.state.news_ranker)
+    print("INFO:     Сервисы инициализированы.")
+    
+    print("INFO:     Запуск *первого* (асинхронного в фоне) обновления кэша...")
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, force_update_bg)
+ 
     # Приложение готово к работе
     yield
 
@@ -118,11 +131,6 @@ async def lifespan(app: FastAPI):
 # --- Инициализация FastAPI с новым менеджером жизненного цикла ---
 app = FastAPI(lifespan=lifespan)
 
-# --- Инициализация сервисов ---
-# Создаем единственный экземпляр ранжировщика, передавая ему кэш
-news_ranker = NewsRanker(cache=news_cache)
-# Создаем сервис тизеров, передавая ему ранжировщик как зависимость
-teaser_service = TeaserService(news_ranker=news_ranker)
 
 # Подключаем статику: здесь файлы CSS, JS, изображения и т.п.
 app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
@@ -145,6 +153,18 @@ def get_db():
         db.close()
 
 
+def get_news_ranker(request: Request) -> NewsRanker:
+    if getattr(request.app.state, "news_ranker", None) is None:
+        raise RuntimeError("NewsRanker not initialized. Check lifespan.")
+    return request.app.state.news_ranker
+ 
+ 
+def get_teaser_service(request: Request) -> TeaserService:
+    if getattr(request.app.state, "teaser_service", None) is None:
+        raise RuntimeError("TeaserService not initialized. Check lifespan.")
+    return request.app.state.teaser_service
+ 
+ 
 # --- Маршруты ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -156,17 +176,38 @@ async def read_index(request: Request, category: Optional[str] = None):
 
 
 @app.get("/preview/{slug}", response_class=HTMLResponse)
-async def read_preview(request: Request, slug: str, db: Session = Depends(get_db)):
+async def read_preview(request: Request, slug: str):
     """
     Страница анонса материала.
     """
-    db_article = get_article_by_slug(db, slug)
-    if db_article is None:
+    loop = asyncio.get_running_loop()
+    def fetch_article_data(slug_local):
+        db = app_state.SessionLocal()
+        try:
+            # Получаем статью с категориями и изображением в одном запросе (eager loading)
+            stmt = (
+                select(Article)
+                .where(Article.slug == slug_local, Article.is_active == True)
+                .options(selectinload(Article.categories), selectinload(Article.image))
+            )
+            db_article = db.execute(stmt).scalar_one_or_none()
+            
+            if db_article is None:
+                return None, None
+            
+            # Получаем первую категорию
+            category = db_article.categories[0].code if db_article.categories else None
+            return db_article, category
+        finally:
+            db.close()
+    
+    result = await loop.run_in_executor(None, fetch_article_data, slug)
+    if result[0] is None:
         raise HTTPException(status_code=404, detail="Article not found")
+    
+    db_article, category = result
 
     context = template_context(request)
-    category = db_article.categories[0].code if db_article.categories else None
-
     context.update({
         "article": db_article,
         "category": category,
@@ -176,24 +217,42 @@ async def read_preview(request: Request, slug: str, db: Session = Depends(get_db
 
 
 @app.get("/article/{slug}", response_class=HTMLResponse)
-async def read_article_page(request: Request, slug: str, db: Session = Depends(get_db)):
+async def read_article_page(request: Request, slug: str):
     """
     Полная страница статьи.
     Текст статьи обрабатывается для вставки тизеров.
     """
-    db_article = get_article_by_slug(db, slug)
-    if db_article is None:
+    loop = asyncio.get_running_loop()
+    def fetch_article_data(slug_local):
+        db = app_state.SessionLocal()
+        try:
+            # Получаем статью с категориями и изображением в одном запросе (eager loading)
+            stmt = (
+                select(Article)
+                .where(Article.slug == slug_local, Article.is_active == True)
+                .options(selectinload(Article.categories), selectinload(Article.image))
+            )
+            db_article = db.execute(stmt).scalar_one_or_none()
+            
+            if db_article is None:
+                return None, None
+            
+            # Получаем первую категорию
+            category = db_article.categories[0].code if db_article.categories else None
+            return db_article, category
+        finally:
+            db.close()
+    
+    result = await loop.run_in_executor(None, fetch_article_data, slug)
+    if result[0] is None:
         raise HTTPException(status_code=404, detail="Article not found")
+    
+    db_article, category = result
 
     # Внедряем плейсхолдеры тизеров в текст
     processed_content = inject_in_article_teasers(db_article.text)
 
-    # Создаем копию, чтобы не мутировать объект сессии (хотя мы только читаем)
-    # Но лучше использовать поле context, чтобы не трогать объект БД
-
     context = template_context(request)
-    category = db_article.categories[0].code if db_article.categories else None
-
     context.update({
         "article": db_article,
         "article_content_with_teasers": processed_content,  # Передаем обработанный текст отдельно
@@ -219,8 +278,31 @@ async def manifest(request: Request):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print(f"VALIDATION ERROR for {request.method} {request.url}:")
+    print(exc.errors())
+    print(exc.body)
+    
+    # Делаем detail сериализуемым, заменяя ValueError на str
+    serializable_errors = []
+    for error in exc.errors():
+        err_copy = error.copy()
+        if 'ctx' in err_copy and 'error' in err_copy['ctx'] and isinstance(err_copy['ctx']['error'], Exception):
+            err_copy['ctx']['error'] = str(err_copy['ctx']['error'])
+        serializable_errors.append(err_copy)
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": serializable_errors}
+    )
+
 @app.post("/etc", response_model=TeaserResponseSchema)
-async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
+async def get_teasers(
+    request: Request,
+    request_data: TeaserRequestSchema = Body(...),
+    teaser_service: TeaserService = Depends(get_teaser_service),
+):
     """
     API-эндпоинт для запроса тизеров (новостных превью) для виджетов
     с учетом дедупликации.
@@ -234,6 +316,14 @@ async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
     - widgets: Словарь {widget_name: ArticlePreviewSchema}
     - newly_served_ids: Список ID, которые клиент должен добавить в cookie
     """
+    # Получаем реальный IP из заголовков или соединения
+    real_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not real_ip:
+        real_ip = request.client.host if request.client else "unknown"
+    
+    # Обновляем request_data с реальным IP
+    request_data.ip = real_ip
+    
     # Вся логика инкапсулирована в TeaserService.
     # Передаем *весь* объект запроса в сервис.
     # print(f"{request_data=}")
