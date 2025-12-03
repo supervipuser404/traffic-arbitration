@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
+import asyncio
 from traffic_arbitration.common.config import config
 from traffic_arbitration.db.queries import get_article_by_slug
 from .utils import inject_in_article_teasers
@@ -43,8 +44,17 @@ class AppState:
 
 
 app_state = AppState()
-
-
+ 
+ 
+def force_update_bg():
+    """Фоновое обновление кэша с обработкой ошибок."""
+    try:
+        news_cache.force_update()
+        print("INFO:     Кэш успешно обновлен.")
+    except Exception as e:
+        print(f"ERROR:    Не удалось выполнить первое обновление кэша: {e}")
+ 
+ 
 # --- Lifespan Manager ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -92,16 +102,11 @@ async def lifespan(app: FastAPI):
     # 3. Внедряем session_maker в кэш и запускаем *первое* обновление
     print("INFO:     Внедрение сессии в кэш...")
     news_cache.set_session_maker(app_state.SessionLocal)
-
-    print("INFO:     Запуск *первого* (синхронного) обновления кэша...")
-    try:
-        news_cache.force_update()
-        print("INFO:     Кэш успешно обновлен.")
-    except Exception as e:
-        print(f"ERROR:    Не удалось выполнить первое обновление кэша: {e}")
-        # В зависимости от логики, здесь можно либо упасть,
-        # либо продолжить с пустым кэшем.
-
+ 
+    print("INFO:     Запуск *первого* (асинхронного в фоне) обновления кэша...")
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, force_update_bg)
+ 
     # Приложение готово к работе
     yield
 
