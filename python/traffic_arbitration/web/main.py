@@ -1,16 +1,19 @@
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, Depends, Body
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, Session, selectinload
 from sshtunnel import SSHTunnelForwarder
 from contextlib import asynccontextmanager
 import asyncio
 from traffic_arbitration.common.config import config
 from traffic_arbitration.db.queries import get_article_by_slug
+from traffic_arbitration.models import Article, Category
 from .utils import inject_in_article_teasers
 from .cache import news_cache
 from .services import NewsRanker, TeaserService
@@ -178,19 +181,33 @@ async def read_preview(request: Request, slug: str):
     Страница анонса материала.
     """
     loop = asyncio.get_running_loop()
-    def fetch_article(slug_local):
+    def fetch_article_data(slug_local):
         db = app_state.SessionLocal()
         try:
-            return get_article_by_slug(db, slug_local)
+            # Получаем статью с категориями и изображением в одном запросе (eager loading)
+            stmt = (
+                select(Article)
+                .where(Article.slug == slug_local, Article.is_active == True)
+                .options(selectinload(Article.categories), selectinload(Article.image))
+            )
+            db_article = db.execute(stmt).scalar_one_or_none()
+            
+            if db_article is None:
+                return None, None
+            
+            # Получаем первую категорию
+            category = db_article.categories[0].code if db_article.categories else None
+            return db_article, category
         finally:
             db.close()
-    db_article = await loop.run_in_executor(None, fetch_article, slug)
-    if db_article is None:
+    
+    result = await loop.run_in_executor(None, fetch_article_data, slug)
+    if result[0] is None:
         raise HTTPException(status_code=404, detail="Article not found")
+    
+    db_article, category = result
 
     context = template_context(request)
-    category = db_article.categories[0].code if db_article.categories else None
-
     context.update({
         "article": db_article,
         "category": category,
@@ -206,25 +223,36 @@ async def read_article_page(request: Request, slug: str):
     Текст статьи обрабатывается для вставки тизеров.
     """
     loop = asyncio.get_running_loop()
-    def fetch_article(slug_local):
+    def fetch_article_data(slug_local):
         db = app_state.SessionLocal()
         try:
-            return get_article_by_slug(db, slug_local)
+            # Получаем статью с категориями и изображением в одном запросе (eager loading)
+            stmt = (
+                select(Article)
+                .where(Article.slug == slug_local, Article.is_active == True)
+                .options(selectinload(Article.categories), selectinload(Article.image))
+            )
+            db_article = db.execute(stmt).scalar_one_or_none()
+            
+            if db_article is None:
+                return None, None
+            
+            # Получаем первую категорию
+            category = db_article.categories[0].code if db_article.categories else None
+            return db_article, category
         finally:
             db.close()
-    db_article = await loop.run_in_executor(None, fetch_article, slug)
-    if db_article is None:
+    
+    result = await loop.run_in_executor(None, fetch_article_data, slug)
+    if result[0] is None:
         raise HTTPException(status_code=404, detail="Article not found")
+    
+    db_article, category = result
 
     # Внедряем плейсхолдеры тизеров в текст
     processed_content = inject_in_article_teasers(db_article.text)
 
-    # Создаем копию, чтобы не мутировать объект сессии (хотя мы только читаем)
-    # Но лучше использовать поле context, чтобы не трогать объект БД
-
     context = template_context(request)
-    category = db_article.categories[0].code if db_article.categories else None
-
     context.update({
         "article": db_article,
         "article_content_with_teasers": processed_content,  # Передаем обработанный текст отдельно
@@ -250,8 +278,28 @@ async def manifest(request: Request):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print(f"VALIDATION ERROR for {request.method} {request.url}:")
+    print(exc.errors())
+    print(exc.body)
+    
+    # Делаем detail сериализуемым, заменяя ValueError на str
+    serializable_errors = []
+    for error in exc.errors():
+        err_copy = error.copy()
+        if 'ctx' in err_copy and 'error' in err_copy['ctx'] and isinstance(err_copy['ctx']['error'], Exception):
+            err_copy['ctx']['error'] = str(err_copy['ctx']['error'])
+        serializable_errors.append(err_copy)
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": serializable_errors}
+    )
+
 @app.post("/etc", response_model=TeaserResponseSchema)
 async def get_teasers(
+    request: Request,
     request_data: TeaserRequestSchema = Body(...),
     teaser_service: TeaserService = Depends(get_teaser_service),
 ):
@@ -268,6 +316,14 @@ async def get_teasers(
     - widgets: Словарь {widget_name: ArticlePreviewSchema}
     - newly_served_ids: Список ID, которые клиент должен добавить в cookie
     """
+    # Получаем реальный IP из заголовков или соединения
+    real_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not real_ip:
+        real_ip = request.client.host if request.client else "unknown"
+    
+    # Обновляем request_data с реальным IP
+    request_data.ip = real_ip
+    
     # Вся логика инкапсулирована в TeaserService.
     # Передаем *весь* объект запроса в сервис.
     # print(f"{request_data=}")

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, computed_field, IPvAnyAddress, HttpUrl, Field, field_validator
+from pydantic import BaseModel, computed_field, IPvAnyAddress, HttpUrl, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Optional, List, Dict
 
@@ -106,7 +106,7 @@ class TeaserRequestSchema(BaseModel):
     Схема для валидации входящего запроса на /etc.
     """
     uid: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-zA-Z0-9\-_]+$", description="User ID")
-    ip: IPvAnyAddress
+    ip: Optional[str] = Field(default=None, description="Client IP (empty string for browser)")
     ua: str = Field(..., min_length=10, max_length=2048, description="User Agent")
     url: HttpUrl = Field(..., max_length=2083)
     loc: str = Field(default="ru", pattern=r"^[a-z]{2}$", examples=["ru", "en"], description="Locale code (e.g., 'ru', 'en')")
@@ -127,25 +127,24 @@ class TeaserRequestSchema(BaseModel):
     @classmethod
     def validate_widgets(cls, v: Dict[str, int]) -> Dict[str, int]:
         allowed_keys = {'l', 's', 'r', 'i'}
-        if not all(k.lower() in allowed_keys for k in v):
-            raise ValueError(f"Widget keys must be subset of {allowed_keys}")
+        if not all(k[0].lower() in allowed_keys for k in v):
+            raise ValueError(f"Widget keys must start with one of {allowed_keys}")
         if sum(v.values()) == 0:
             raise ValueError("Must request at least one teaser")
         if any(val < 1 for val in v.values()):
             raise ValueError("All widget quantities must be positive integers")
-        if sum(v.values()) > 20:
-            raise ValueError("Total number of teasers requested cannot exceed 20")
+        if sum(v.values()) > 100:
+            raise ValueError("Total number of teasers requested cannot exceed 100")
         return v
 
     @field_validator('seen_ids_page', 'seen_ids_long_term')
     @classmethod
     def validate_seen_ids(cls, v: List[int]) -> List[int]:
-        if len(v) > 200:
-            raise ValueError("Maximum 200 seen IDs allowed")
-        if not all(isinstance(x, int) and 1 <= x <= 10000000 for x in v):
-            raise ValueError("All seen IDs must be integers between 1 and 10,000,000")
-        if len(set(v)) != len(v):
-            raise ValueError("Seen IDs must be unique")
+        # Обрезаем только очень длинные списки (возможная ошибка или излишек)
+        if len(v) > 1000:
+            raise ValueError("Seen IDs list too long (max 1000), possible cookie overflow")
+        if not all(isinstance(x, int) and 1 <= x <= 2000000000 for x in v):
+            raise ValueError("All seen IDs must be integers between 1 and 2,000,000,000")
         return v
 
     @model_validator(mode='after')
