@@ -83,8 +83,7 @@ class NewsCache:
                 .join(ArticleCategory, Article.id == ArticleCategory.article_id)
                 .join(Category, ArticleCategory.category_id == Category.id)
                 .where(ArticlePreview.is_active == True)
-                # Сначала свежие, но сортировка будет переделана в Python
-                .order_by(Article.source_datetime.desc())
+                .order_by(ArticlePreview.id.desc()).limit(1000)
             )
 
             all_previews_data = db_session.execute(stmt).mappings().all()
@@ -124,6 +123,7 @@ class NewsCache:
 
                 except Exception as e:
                     logger.error(f"Ошибка создания объекта кэша: {e}")
+                    continue
 
             # Сортировка по CTR (High -> Low) для RTB логики
             new_previews.sort(key=lambda x: x.ctr, reverse=True)
