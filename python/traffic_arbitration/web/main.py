@@ -173,11 +173,18 @@ async def read_index(request: Request, category: Optional[str] = None):
 
 
 @app.get("/preview/{slug}", response_class=HTMLResponse)
-async def read_preview(request: Request, slug: str, db: Session = Depends(get_db)):
+async def read_preview(request: Request, slug: str):
     """
     Страница анонса материала.
     """
-    db_article = get_article_by_slug(db, slug)
+    loop = asyncio.get_running_loop()
+    def fetch_article(slug_local):
+        db = app_state.SessionLocal()
+        try:
+            return get_article_by_slug(db, slug_local)
+        finally:
+            db.close()
+    db_article = await loop.run_in_executor(None, fetch_article, slug)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
@@ -193,12 +200,19 @@ async def read_preview(request: Request, slug: str, db: Session = Depends(get_db
 
 
 @app.get("/article/{slug}", response_class=HTMLResponse)
-async def read_article_page(request: Request, slug: str, db: Session = Depends(get_db)):
+async def read_article_page(request: Request, slug: str):
     """
     Полная страница статьи.
     Текст статьи обрабатывается для вставки тизеров.
     """
-    db_article = get_article_by_slug(db, slug)
+    loop = asyncio.get_running_loop()
+    def fetch_article(slug_local):
+        db = app_state.SessionLocal()
+        try:
+            return get_article_by_slug(db, slug_local)
+        finally:
+            db.close()
+    db_article = await loop.run_in_executor(None, fetch_article, slug)
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 

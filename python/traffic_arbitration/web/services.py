@@ -102,7 +102,14 @@ class TeaserService:
         for widget_name, quantity in sorted_widgets:
             # Сейчас quantity=1, подразумевалось, что может быть bulk, для чего в ответе мы должны отдавать списки.
             # Но пока не используется, поэтому оставляем логику простую.
-            candidate = next(candidate_generator)
+            try:
+                candidate = next(candidate_generator)
+            except StopIteration:
+                return {
+                    "widgets": {},
+                    "newly_served_ids": [],
+                    "seen_ids_long_term": list(request_data.seen_ids_long_term),
+                }
             # Прокидываем slug для формирования URL
             candidate.preview_obj.slug = candidate.slug
             response_widgets[widget_name] = candidate.preview_obj

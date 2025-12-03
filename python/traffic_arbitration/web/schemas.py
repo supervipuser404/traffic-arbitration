@@ -1,4 +1,4 @@
-from pydantic import BaseModel, computed_field, IPvAnyAddress, HttpUrl
+from pydantic import BaseModel, computed_field, IPvAnyAddress, HttpUrl, Field, field_validator
 from datetime import datetime
 from typing import Optional, List, Dict
 
@@ -105,23 +105,57 @@ class TeaserRequestSchema(BaseModel):
     """
     Схема для валидации входящего запроса на /etc.
     """
-    uid: str
+    uid: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-zA-Z0-9\-_]+$", description="User ID")
     ip: IPvAnyAddress
-    ua: str
-    url: HttpUrl
-    loc: str = "ru"
-    w: int
-    h: int
-    d: Optional[float] = None
-    widgets: Dict[str, int]  # { "widget_name": quantity }
+    ua: str = Field(..., min_length=10, max_length=2048, description="User Agent")
+    url: HttpUrl = Field(..., max_length=2083)
+    loc: str = Field(default="ru", pattern=r"^[a-z]{2}$", examples=["ru", "en"], description="Locale code (e.g., 'ru', 'en')")
+    w: int = Field(..., gt=0, le=10000, description="Viewport width")
+    h: int = Field(..., gt=0, le=10000, description="Viewport height")
+    d: float = Field(default=1.0, ge=0.25, le=4.0, description="Device pixel ratio")
+    widgets: Dict[str, int] = Field(..., description="{ 'l': qty, 's': qty, 'r': qty, 'i': qty }")
 
     # --- НОВЫЕ ПОЛЯ ---
     # ID, которые *уже показаны* на *этой странице* (краткосрочная память)
-    seen_ids_page: List[int] = []
+    seen_ids_page: List[int] = Field(default_factory=list, description="Seen preview IDs on current page")
     # ID из cookie (долгосрочная память)
-    seen_ids_long_term: List[int] = []
+    seen_ids_long_term: List[int] = Field(default_factory=list, description="Long-term seen preview IDs")
     # Код категории (из URL)
-    category: Optional[str] = None
+    category: Optional[str] = Field(default=None, pattern=r"^[a-zA-Z0-9_-]+$", max_length=50, description="Category code")
+
+    @field_validator('widgets')
+    @classmethod
+    def validate_widgets(cls, v: Dict[str, int]) -> Dict[str, int]:
+        allowed_keys = {'l', 's', 'r', 'i'}
+        if not all(k.lower() in allowed_keys for k in v):
+            raise ValueError(f"Widget keys must be subset of {allowed_keys}")
+        if sum(v.values()) == 0:
+            raise ValueError("Must request at least one teaser")
+        if any(val < 1 for val in v.values()):
+            raise ValueError("All widget quantities must be positive integers")
+        if sum(v.values()) > 20:
+            raise ValueError("Total number of teasers requested cannot exceed 20")
+        return v
+
+    @field_validator('seen_ids_page', 'seen_ids_long_term')
+    @classmethod
+    def validate_seen_ids(cls, v: List[int]) -> List[int]:
+        if len(v) > 200:
+            raise ValueError("Maximum 200 seen IDs allowed")
+        if not all(isinstance(x, int) and 1 <= x <= 10000000 for x in v):
+            raise ValueError("All seen IDs must be integers between 1 and 10,000,000")
+        if len(set(v)) != len(v):
+            raise ValueError("Seen IDs must be unique")
+        return v
+
+    @model_validator(mode='after')
+    def validate_full_request(self: 'TeaserRequestSchema') -> 'TeaserRequestSchema':
+        page_ids = self.seen_ids_page
+        long_ids = self.seen_ids_long_term
+        all_seen = set(page_ids) | set(long_ids)
+        if len(all_seen) > 500:
+            raise ValueError("Total unique seen preview IDs across page and long-term cannot exceed 500")
+        return self
 
 
 class TeaserResponseSchema(BaseModel):
