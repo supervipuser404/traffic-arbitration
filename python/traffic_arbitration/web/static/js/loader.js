@@ -184,7 +184,7 @@ function renderWidget(wName, teaser) {
 
 // --- FEED LOGIC ---
 function getColumns() {
-    const cols = $('#teaser-feed').css('--feed-columns');
+    const cols = $('.teaser-feed').css('--feed-columns');
     return parseInt(cols) || 1;
 }
 
@@ -204,7 +204,7 @@ function generatePlaceholders(row, cols) {
 // --- INIT ---
 $(document).ready(function() {
     const widgetsToRequest = {};
-    const $feed = $('#teaser-feed');
+    const $feed = $('.teaser-feed');
     const isMobile = window.innerWidth < 994;
 
     // 1. In-Article (i)
