@@ -102,7 +102,12 @@ async def lifespan(app: FastAPI):
     # 3. Внедряем session_maker в кэш и запускаем *первое* обновление
     print("INFO:     Внедрение сессии в кэш...")
     news_cache.set_session_maker(app_state.SessionLocal)
- 
+    
+    print("INFO:     Инициализация сервисов...")
+    app.state.news_ranker = NewsRanker(cache=news_cache)
+    app.state.teaser_service = TeaserService(news_ranker=app.state.news_ranker)
+    print("INFO:     Сервисы инициализированы.")
+    
     print("INFO:     Запуск *первого* (асинхронного в фоне) обновления кэша...")
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, force_update_bg)
@@ -123,11 +128,6 @@ async def lifespan(app: FastAPI):
 # --- Инициализация FastAPI с новым менеджером жизненного цикла ---
 app = FastAPI(lifespan=lifespan)
 
-# --- Инициализация сервисов ---
-# Создаем единственный экземпляр ранжировщика, передавая ему кэш
-news_ranker = NewsRanker(cache=news_cache)
-# Создаем сервис тизеров, передавая ему ранжировщик как зависимость
-teaser_service = TeaserService(news_ranker=news_ranker)
 
 # Подключаем статику: здесь файлы CSS, JS, изображения и т.п.
 app.mount("/static", StaticFiles(directory=web_config["static"]), name="static")
@@ -150,6 +150,18 @@ def get_db():
         db.close()
 
 
+def get_news_ranker(request: Request) -> NewsRanker:
+    if getattr(request.app.state, "news_ranker", None) is None:
+        raise RuntimeError("NewsRanker not initialized. Check lifespan.")
+    return request.app.state.news_ranker
+ 
+ 
+def get_teaser_service(request: Request) -> TeaserService:
+    if getattr(request.app.state, "teaser_service", None) is None:
+        raise RuntimeError("TeaserService not initialized. Check lifespan.")
+    return request.app.state.teaser_service
+ 
+ 
 # --- Маршруты ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -225,7 +237,10 @@ async def manifest(request: Request):
 
 
 @app.post("/etc", response_model=TeaserResponseSchema)
-async def get_teasers(request_data: TeaserRequestSchema = Body(...)):
+async def get_teasers(
+    request_data: TeaserRequestSchema = Body(...),
+    teaser_service: TeaserService = Depends(get_teaser_service),
+):
     """
     API-эндпоинт для запроса тизеров (новостных превью) для виджетов
     с учетом дедупликации.
